@@ -2,6 +2,7 @@
 
 import type { PlayerProfile } from "@/lib/characters"
 import { AutoTutorialDemo } from "./auto-tutorial-demo"
+import type { ControlMode } from "./slingshot-game"
 
 export interface GameInstructionsProps {
   onPlay: () => void
@@ -9,6 +10,8 @@ export interface GameInstructionsProps {
   playerProfile?: PlayerProfile | null
   onOpenPlayerSetup?: () => void
   soundOn?: boolean
+  controlMode?: ControlMode
+  onControlModeChange?: (mode: ControlMode) => void
 }
 
 export function GameInstructions({
@@ -17,6 +20,8 @@ export function GameInstructions({
   playerProfile,
   onOpenPlayerSetup,
   soundOn = true,
+  controlMode = "mouse",
+  onControlModeChange,
 }: GameInstructionsProps) {
   return (
     <AutoTutorialDemo
@@ -25,6 +30,8 @@ export function GameInstructions({
       playerProfile={playerProfile}
       onOpenPlayerSetup={onOpenPlayerSetup}
       soundOn={soundOn}
+      controlMode={controlMode}
+      onControlModeChange={onControlModeChange}
     />
   )
 }

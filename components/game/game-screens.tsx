@@ -2,12 +2,14 @@
 
 import { useState } from "react"
 import {
+  Camera,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   CircleHelp,
   Clock3,
   Home,
+  MousePointerClick,
   Sparkles,
   UserCheck,
   UserPlus,
@@ -19,12 +21,15 @@ import { getCharacterById, type PlayerProfile } from "@/lib/characters"
 import { gameAudio } from "@/lib/audio"
 import { BrandMark, ManaMascot, PrimaryButton } from "./game-brand"
 import { CharacterAvatar, type SetupStep } from "./player-setup-modal"
+import type { ControlMode } from "./slingshot-game"
 import { SlingshotIllustration, TargetBoard } from "./target-board"
 
 export interface GameLandingProps {
   onStart: () => void
   playerProfile?: PlayerProfile | null
   onOpenPlayerSetup?: (step?: SetupStep) => void
+  controlMode?: ControlMode
+  onControlModeChange?: (mode: ControlMode) => void
 }
 
 export interface GameSummaryProps {
@@ -42,8 +47,12 @@ export function GameLanding({
   onStart,
   playerProfile,
   onOpenPlayerSetup,
+  controlMode = "mouse",
+  onControlModeChange,
 }: GameLandingProps) {
-  const companion = playerProfile ? getCharacterById(playerProfile.characterId) : null
+  const companion = playerProfile
+    ? getCharacterById(playerProfile.characterId)
+    : null
 
   return (
     <main className="screen landing-screen">
@@ -126,6 +135,49 @@ export function GameLanding({
           </div>
         )}
 
+        {/* Control Mode Selector: Mouse/Touch vs AR Camera Hand Gesture */}
+        {onControlModeChange && (
+          <div className="landing-control-selector" role="radiogroup" aria-label="Chọn phương thức điều khiển ná">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={controlMode === "mouse"}
+              onClick={() => {
+                gameAudio.playClick()
+                onControlModeChange("mouse")
+              }}
+              className={`landing-mode-card ${controlMode === "mouse" ? "is-selected" : ""}`}
+            >
+              <span className="landing-mode-icon">
+                <MousePointerClick size={16} />
+              </span>
+              <span className="landing-mode-copy">
+                <b>CHUỘT / CẢM ỨNG</b>
+                <small>Kéo &amp; thả trực tiếp trên màn hình</small>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              role="radio"
+              aria-checked={controlMode === "ar"}
+              onClick={() => {
+                gameAudio.playClick()
+                onControlModeChange("ar")
+              }}
+              className={`landing-mode-card is-ar ${controlMode === "ar" ? "is-selected" : ""}`}
+            >
+              <span className="landing-mode-icon">
+                <Camera size={16} />
+              </span>
+              <span className="landing-mode-copy">
+                <b>CAMERA AR (CỬ CHỈ TAY)</b>
+                <small>Chụm tay cầm ná, kéo &amp; mở tay để bắn</small>
+              </span>
+            </button>
+          </div>
+        )}
+
         <div className="landing-meta">
           <span>
             <span className="mini-icon">10</span> 10 câu hỏi
@@ -159,7 +211,9 @@ export function GameLanding({
           <span className="quick-note-icon">
             <CircleHelp size={15} />
           </span>{" "}
-          Quan sát tình huống, kéo ná và chọn bia phù hợp!
+          {controlMode === "ar"
+            ? "Chế độ AR: Đưa tay trước Camera, chụm ngón cái & trỏ để cầm ná, kéo và mở tay để bắn!"
+            : "Quan sát tình huống, kéo ná và chọn bia phù hợp!"}
         </div>
       </div>
 
@@ -182,7 +236,10 @@ export function GameLanding({
         </div>
         <ManaMascot />
         {companion && (
-          <div className="landing-stage-companion" title={`Bạn đồng hành: ${companion.name}`}>
+          <div
+            className="landing-stage-companion"
+            title={`Bạn đồng hành: ${companion.name}`}
+          >
             <div className="landing-stage-companion-avatar">
               <CharacterAvatar character={companion} />
             </div>
@@ -220,15 +277,20 @@ export function GameSummary({
   const [showReview, setShowReview] = useState(false)
   const [filter, setFilter] = useState<"all" | "correct" | "wrong">("all")
 
-  const totalQuestions = attempts.length > 0 ? attempts.length : questions.length
+  const totalQuestions =
+    attempts.length > 0 ? attempts.length : questions.length
   const correctCount = attempts.filter((attempt) => attempt.correct).length
   const wrongCount = Math.max(0, totalQuestions - correctCount)
-  const accuracy = Math.round((correctCount / Math.max(1, totalQuestions)) * 100)
+  const accuracy = Math.round(
+    (correctCount / Math.max(1, totalQuestions)) * 100
+  )
   const minutes = Math.floor(elapsed / 60)
     .toString()
     .padStart(2, "0")
   const seconds = (elapsed % 60).toString().padStart(2, "0")
-  const companion = playerProfile ? getCharacterById(playerProfile.characterId) : null
+  const companion = playerProfile
+    ? getCharacterById(playerProfile.characterId)
+    : null
 
   const reviewItems = attempts.map((attempt, index) => {
     const q =
@@ -308,7 +370,9 @@ export function GameSummary({
           <h1>
             XẠ THỦ AI
             <br />
-            <span>{playerProfile ? playerProfile.playerName.toUpperCase() : "XUẤT SẮC!"}</span>
+            <span>
+              {playerProfile ? playerProfile.playerName.toUpperCase() : "XUẤT SẮC!"}
+            </span>
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <p className="award-label">{getAward(accuracy)}</p>
@@ -403,7 +467,9 @@ export function GameSummary({
             <div className="summary-review-header">
               <div>
                 <h3>BẢNG XEM LẠI TÌNH HUỐNG &amp; GIẢI THÍCH SƯ PHẠM</h3>
-                <p>Đối chiếu lựa chọn của xạ thủ với đáp án chuẩn của Manabie</p>
+                <p>
+                  Đối chiếu lựa chọn của xạ thủ với đáp án chuẩn của Manabie
+                </p>
               </div>
               <div className="summary-review-filters">
                 <button
@@ -440,14 +506,18 @@ export function GameSummary({
                     <span className="review-q-badge">
                       CÂU {String(index).padStart(2, "0")} • {question.category}
                     </span>
-                    <span className={`review-result-badge ${attempt.correct ? "is-correct" : "is-wrong"}`}>
+                    <span
+                      className={`review-result-badge ${attempt.correct ? "is-correct" : "is-wrong"}`}
+                    >
                       {attempt.correct ? (
                         <>
-                          <CheckCircle2 size={14} /> ĐÚNG (+{GAME_SCORING.CORRECT_ANSWER} ĐIỂM)
+                          <CheckCircle2 size={14} /> ĐÚNG (+
+                          {GAME_SCORING.CORRECT_ANSWER} ĐIỂM)
                         </>
                       ) : (
                         <>
-                          <XCircle size={14} /> SAI (-{GAME_SCORING.WRONG_ANSWER} ĐIỂM)
+                          <XCircle size={14} /> SAI (-
+                          {GAME_SCORING.WRONG_ANSWER} ĐIỂM)
                         </>
                       )}
                     </span>
@@ -456,18 +526,28 @@ export function GameSummary({
                   <div className="summary-review-compare">
                     <div>
                       <span>Bia em bắn:</span>
-                      <b className={attempt.correct ? "text-[#15803d]" : "text-[#dc2626]"}>
+                      <b
+                        className={
+                          attempt.correct
+                            ? "text-[#15803d]"
+                            : "text-[#dc2626]"
+                        }
+                      >
                         {attempt.answer === "ai" ? "CÓ AI" : "KHÔNG CÓ AI"}
                       </b>
                     </div>
                     <div>
                       <span>Đáp án chuẩn:</span>
                       <b className="text-[#395ad2]">
-                        {question.correctAnswer === "ai" ? "CÓ AI" : "KHÔNG CÓ AI"}
+                        {question.correctAnswer === "ai"
+                          ? "CÓ AI"
+                          : "KHÔNG CÓ AI"}
                       </b>
                     </div>
                   </div>
-                  <p className="summary-review-explanation">{question.explanation}</p>
+                  <p className="summary-review-explanation">
+                    {question.explanation}
+                  </p>
                 </article>
               ))}
             </div>

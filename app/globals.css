@@ -962,3 +962,303 @@ button:focus-visible { outline: 3px solid #ff9b42; outline-offset: 3px; }
     padding: 6px 10px;
   }
 }
+
+
+/* ============================================================================
+ * AR CAMERA HAND GESTURE CONTROLLER & CONTROL MODE SWITCHER STYLES
+ * ============================================================================ */
+.control-mode-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1.5px solid #dbeafe;
+  background: #f0f4ff;
+  box-shadow: inset 0 1px 2px rgba(27, 58, 138, 0.08);
+}
+.control-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: #64708a;
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+.control-mode-pill:hover {
+  color: #24304a;
+}
+.control-mode-pill.is-active {
+  background: #395ad2;
+  color: #fff;
+  box-shadow: 0 2px 0 #1e3a8a;
+}
+.control-mode-pill.is-ar.is-active {
+  background: linear-gradient(180deg, #ff9b42 0%, #f47920 100%);
+  color: #fff;
+  box-shadow: 0 2px 0 #9a3412;
+}
+
+.landing-control-selector {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+  max-width: 470px;
+}
+.landing-mode-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 15px;
+  border: 2px solid #e2e8f0;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.landing-mode-card:hover {
+  transform: translateY(-1px);
+  border-color: #9baae8;
+}
+.landing-mode-card.is-selected {
+  border-color: #395ad2;
+  background: #eef2ff;
+  box-shadow: 0 4px 0 #395ad2;
+}
+.landing-mode-card.is-ar.is-selected {
+  border-color: #f47920;
+  background: #fff7ed;
+  box-shadow: 0 4px 0 #d97706;
+}
+.landing-mode-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 11px;
+  background: #f0f4ff;
+  color: #395ad2;
+}
+.landing-mode-card.is-selected .landing-mode-icon {
+  background: #395ad2;
+  color: #fff;
+}
+.landing-mode-card.is-ar .landing-mode-icon {
+  background: #ffedd5;
+  color: #ea580c;
+}
+.landing-mode-card.is-ar.is-selected .landing-mode-icon {
+  background: #f47920;
+  color: #fff;
+}
+.landing-mode-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.landing-mode-copy b {
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  color: #24304a;
+}
+.landing-mode-copy small {
+  font-size: 9px;
+  font-weight: 650;
+  color: #64708a;
+  line-height: 1.25;
+}
+
+.arena-ar-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  color: #ea580c;
+  font-size: 8.5px;
+  font-weight: 900;
+}
+
+/* Picture-in-Picture AR Camera Hand Tracker HUD inside Arena Stage */
+.ar-camera-hud {
+  position: absolute;
+  z-index: 8;
+  bottom: 12px;
+  left: 14px;
+  width: 215px;
+  border-radius: 18px;
+  border: 3px solid #395ad2;
+  background: #0f172a;
+  box-shadow: 0 6px 0 #1e3a8a, 0 14px 32px rgba(15, 23, 42, 0.35);
+  overflow: hidden;
+  transition: width 0.22s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.ar-camera-hud.is-expanded {
+  width: 310px;
+}
+.ar-camera-hud.is-grabbing {
+  border-color: #ff9b42;
+  box-shadow: 0 6px 0 #c2410c, 0 0 20px rgba(255, 155, 66, 0.55);
+}
+.ar-camera-hud-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 9px;
+  background: linear-gradient(90deg, #1e3a8a 0%, #395ad2 100%);
+  color: #fff;
+}
+.ar-camera-hud.is-grabbing .ar-camera-hud-header {
+  background: linear-gradient(90deg, #c2410c 0%, #f47920 100%);
+}
+.ar-camera-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+.ar-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #42b883;
+  box-shadow: 0 0 0 3px rgba(66, 184, 131, 0.28);
+  animation: pulse 1.5s infinite;
+}
+.ar-camera-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.ar-hud-icon-btn {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  cursor: pointer;
+}
+.ar-hud-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+.ar-hud-switch-btn {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 7px;
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 8.5px;
+  font-weight: 850;
+  cursor: pointer;
+}
+.ar-hud-switch-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+.ar-camera-viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #090d16;
+  overflow: hidden;
+}
+.ar-camera-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  opacity: 0.92;
+}
+.ar-camera-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.ar-camera-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px;
+  background: rgba(15, 23, 42, 0.86);
+  color: #e2e8f0;
+  font-size: 9.5px;
+  font-weight: 750;
+  text-align: center;
+  line-height: 1.35;
+}
+.ar-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: #ff9b42;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.ar-retry-btn.is-secondary {
+  background: #395ad2;
+}
+.ar-camera-status-bar {
+  padding: 5px 8px;
+  background: #1e293b;
+  color: #a7f3d0;
+  font-size: 8.5px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ar-camera-status-bar.is-grabbing {
+  background: #fff7ed;
+  color: #c2410c;
+}
+.ar-hand-arena-cursor {
+  pointer-events: none;
+  transition: transform 0.04s linear;
+}
+
+@media (max-width: 720px) {
+  .landing-control-selector {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+  .ar-camera-hud {
+    width: 156px;
+    bottom: 8px;
+    left: 8px;
+  }
+  .ar-camera-hud.is-expanded {
+    width: 220px;
+  }
+}

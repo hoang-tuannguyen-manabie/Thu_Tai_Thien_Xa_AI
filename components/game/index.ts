@@ -9,6 +9,7 @@ export { SlingshotIllustration, TargetBoard } from "./target-board"
 export { FeedbackOverlay } from "./answer-feedback"
 export { SlingshotVisual } from "./slingshot-game"
 export { CharacterAvatar, PlayerSetupModal } from "./player-setup-modal"
+export { ARHandController } from "./ar-hand-controller"
 export type { GameQuestion } from "@/lib/game-data"
 export type { GameplayPhase, ShotResult } from "@/lib/game-logic"
 export { GAME_SCORING } from "@/lib/game-logic"
@@ -18,8 +19,9 @@ export type { FeedbackOverlayProps } from "./answer-feedback"
 export type { GameArenaProps } from "./game-arena"
 export type { GameHeaderProps, QuestionCardProps, ScorePanelProps } from "./game-hud"
 export type { GameLandingProps, GameSummaryProps } from "./game-screens"
-export type { SlingshotGameProps } from "./slingshot-game"
+export type { ControlMode, SlingshotGameProps } from "./slingshot-game"
 export type { PlayerSetupModalProps, SetupStep } from "./player-setup-modal"
+export type { ARHandControllerProps, ARHandFrame } from "./ar-hand-controller"
 export {
   calculateLaunchVelocity,
   clampPullPoint,

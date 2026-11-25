@@ -20,6 +20,7 @@ import { GameLayout } from "./game-layout"
 import { GameInstructions } from "./game-instructions"
 import { GameLanding, GameSummary } from "./game-screens"
 import { PlayerSetupModal, type SetupStep } from "./player-setup-modal"
+import type { ControlMode } from "./slingshot-game"
 import type { GameVisualState } from "./game-types"
 
 type Screen = "home" | "instructions" | "game" | "summary"
@@ -34,6 +35,7 @@ export default function GameApp() {
   const [paused, setPaused] = useState(false)
   const [soundOn, setSoundOn] = useState(true)
   const [elapsed, setElapsed] = useState(0)
+  const [controlMode, setControlMode] = useState<ControlMode>("mouse")
   const [gameplayPhase, setGameplayPhase] = useState<GameplayPhase>("READY")
   const [interactionState, setInteractionState] = useState<
     "idle" | "dragging" | "aiming" | "shooting" | "collision"
@@ -204,6 +206,8 @@ export default function GameApp() {
           }}
           playerProfile={playerProfile}
           onOpenPlayerSetup={openPlayerSetup}
+          controlMode={controlMode}
+          onControlModeChange={setControlMode}
         />
       )}
 
@@ -217,6 +221,8 @@ export default function GameApp() {
           playerProfile={playerProfile}
           onOpenPlayerSetup={() => openPlayerSetup("confirm")}
           soundOn={soundOn}
+          controlMode={controlMode}
+          onControlModeChange={setControlMode}
         />
       )}
 
@@ -239,6 +245,8 @@ export default function GameApp() {
           onInteractionStateChange={handleInteractionStateChange}
           playerProfile={playerProfile}
           onOpenPlayerSetup={() => openPlayerSetup("confirm")}
+          controlMode={controlMode}
+          onControlModeChange={setControlMode}
         />
       )}
 

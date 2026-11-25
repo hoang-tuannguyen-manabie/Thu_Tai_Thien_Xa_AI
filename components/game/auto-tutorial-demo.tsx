@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react"
 import { motion, useReducedMotion } from "framer-motion"
-import { ArrowLeft, Check, RotateCcw, Sparkles, UserCheck, X } from "lucide-react"
+import { ArrowLeft, Camera, Check, MousePointerClick, RotateCcw, UserCheck, X } from "lucide-react"
 import { applyScoreDelta, GAME_SCORING } from "@/lib/game-logic"
 import { getCharacterById, type PlayerProfile } from "@/lib/characters"
 import { gameAudio } from "@/lib/audio"
 import { CharacterAvatar } from "./player-setup-modal"
+import type { ControlMode } from "./slingshot-game"
 
 const wordmarkUrl = "/assets/brand/manabie-logo.png"
 const fallbackWordmarkUrl =
@@ -195,6 +196,8 @@ export interface AutoTutorialDemoProps {
   playerProfile?: PlayerProfile | null
   onOpenPlayerSetup?: () => void
   soundOn?: boolean
+  controlMode?: ControlMode
+  onControlModeChange?: (mode: ControlMode) => void
 }
 
 export function AutoTutorialDemo({
@@ -203,6 +206,8 @@ export function AutoTutorialDemo({
   playerProfile,
   onOpenPlayerSetup,
   soundOn = true,
+  controlMode = "mouse",
+  onControlModeChange,
 }: AutoTutorialDemoProps) {
   const [phase, setPhase] = useState<DemoPhase>("opening")
   const [countdown, setCountdown] = useState<number | null>(null)
@@ -284,7 +289,9 @@ export function AutoTutorialDemo({
     phase === "opening"
       ? "QUAN SÁT MANA THỬ TÀI!"
       : isAiming
-      ? "KÉO NÁ – NHẮM BIA"
+      ? controlMode === "ar"
+        ? "CHỤM TAY KÉO NÁ – NHẮM BIA"
+        : "KÉO NÁ – NHẮM BIA"
       : isFlying
       ? "MANA ĐANG BẮN!"
       : isCorrectHit
@@ -328,6 +335,32 @@ export function AutoTutorialDemo({
           alt="Manabie"
         />
         <div className="auto-tutorial-controls">
+          {onControlModeChange && (
+            <div className="control-mode-switcher" role="group" aria-label="Chọn chế độ điều khiển">
+              <button
+                type="button"
+                onClick={() => {
+                  gameAudio.playClick()
+                  onControlModeChange("mouse")
+                }}
+                className={`control-mode-pill ${controlMode === "mouse" ? "is-active" : ""}`}
+              >
+                <MousePointerClick size={13} />
+                <span>CHUỘT / CHẠM</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  gameAudio.playClick()
+                  onControlModeChange("ar")
+                }}
+                className={`control-mode-pill is-ar ${controlMode === "ar" ? "is-active" : ""}`}
+              >
+                <Camera size={13} />
+                <span>CAMERA AR (TAY)</span>
+              </button>
+            </div>
+          )}
           {playerProfile && companion && (
             <button
               type="button"
@@ -391,29 +424,114 @@ export function AutoTutorialDemo({
             preserveAspectRatio="none"
             aria-hidden="true"
           >
+            <defs>
+              <linearGradient id="tutWoodGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#E69A50" />
+                <stop offset="55%" stopColor="#B86B28" />
+                <stop offset="100%" stopColor="#844614" />
+              </linearGradient>
+              <linearGradient id="tutGripGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#5C7CFA" />
+                <stop offset="50%" stopColor="#395AD2" />
+                <stop offset="100%" stopColor="#233B99" />
+              </linearGradient>
+            </defs>
+
+            {/* Back Elastic Band */}
             <motion.path
               className="tutorial-band tutorial-band-back"
               d={
                 isAiming
-                  ? "M 466 350 Q 423 379 430 357"
-                  : "M 466 350 Q 482 322 500 350"
+                  ? "M 464 334 Q 423 379 430 357"
+                  : "M 464 334 Q 482 322 500 350"
               }
+              stroke="#F47920"
+              strokeWidth="10"
               transition={{ duration: reducedMotion ? 0 : 0.65, ease: "easeOut" }}
             />
+
+            {/* 2D Cartoon Slingshot Y-Frame */}
+            <path
+              d="M 500 496 L 500 426 C 500 392 464 372 464 326 M 500 426 C 500 392 536 372 536 326"
+              fill="none"
+              stroke="#4A250B"
+              strokeWidth="26"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M 500 496 L 500 426 C 500 392 464 372 464 326 M 500 426 C 500 392 536 372 536 326"
+              fill="none"
+              stroke="url(#tutWoodGrad)"
+              strokeWidth="18"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {/* Red-Orange Rubber Fork Wraps */}
+            <rect
+              x="452"
+              y="324"
+              width="24"
+              height="11"
+              rx="5"
+              fill="#EF5350"
+              stroke="#4A250B"
+              strokeWidth="3"
+            />
+            <rect
+              x="524"
+              y="324"
+              width="24"
+              height="11"
+              rx="5"
+              fill="#EF5350"
+              stroke="#4A250B"
+              strokeWidth="3"
+            />
+            {/* Ergonomic Blue & Orange Handle */}
+            <rect
+              x="487"
+              y="436"
+              width="26"
+              height="48"
+              rx="10"
+              fill="url(#tutGripGrad)"
+              stroke="#4A250B"
+              strokeWidth="3.5"
+            />
+            <rect
+              x="485"
+              y="428"
+              width="30"
+              height="10"
+              rx="5"
+              fill="#FF9B42"
+              stroke="#4A250B"
+              strokeWidth="3"
+            />
+            <ellipse
+              cx="500"
+              cy="490"
+              rx="15"
+              ry="7"
+              fill="#FFBE63"
+              stroke="#4A250B"
+              strokeWidth="3"
+            />
+
+            {/* Front Elastic Band */}
             <motion.path
               className="tutorial-band tutorial-band-front"
               d={
                 isAiming
-                  ? "M 534 350 Q 468 380 430 357"
-                  : "M 534 350 Q 518 322 500 350"
+                  ? "M 536 334 Q 468 380 430 357"
+                  : "M 536 334 Q 518 322 500 350"
               }
+              stroke="#FF9B42"
+              strokeWidth="10"
               transition={{ duration: reducedMotion ? 0 : 0.65, ease: "easeOut" }}
             />
-            <path
-              className="tutorial-sling-frame"
-              d="M500 493 C488 443 478 391 466 350 M500 493 C512 443 522 391 534 350 M466 350 L460 314 M534 350 L540 314"
-            />
-            <path className="tutorial-sling-grip" d="M480 490 Q500 474 520 490" />
+
             {isAiming && (
               <motion.path
                 className="tutorial-aim-arc"

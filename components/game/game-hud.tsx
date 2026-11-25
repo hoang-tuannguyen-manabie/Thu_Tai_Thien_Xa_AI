@@ -4,11 +4,13 @@ import { useState, type ReactNode } from "react"
 import {
   Bot,
   Calculator,
+  Camera,
   CircleHelp,
   Clock3,
   Fingerprint,
   Languages,
   Lightbulb,
+  MousePointerClick,
   Pause,
   Play,
   Timer,
@@ -23,6 +25,7 @@ import { getCharacterById, type PlayerProfile } from "@/lib/characters"
 import { gameAudio } from "@/lib/audio"
 import { BrandMark } from "./game-brand"
 import { CharacterAvatar } from "./player-setup-modal"
+import type { ControlMode } from "./slingshot-game"
 
 export interface GameHeaderProps {
   questionIndex: number
@@ -37,11 +40,14 @@ export interface GameHeaderProps {
   onSound: () => void
   playerProfile?: PlayerProfile | null
   onOpenPlayerSetup?: () => void
+  controlMode?: ControlMode
+  onControlModeChange?: (mode: ControlMode) => void
 }
 
 export interface QuestionCardProps {
   question: GameQuestion
   index: number
+  controlMode?: ControlMode
 }
 
 export interface ScorePanelProps {
@@ -96,6 +102,8 @@ export function GameHeader({
   onSound,
   playerProfile,
   onOpenPlayerSetup,
+  controlMode = "mouse",
+  onControlModeChange,
 }: GameHeaderProps) {
   const progress = Math.round((answeredCount / Math.max(1, questionCount)) * 100)
   const companion = playerProfile ? getCharacterById(playerProfile.characterId) : null
@@ -136,6 +144,35 @@ export function GameHeader({
       </div>
 
       <div className="header-stats">
+        {onControlModeChange && (
+          <div className="control-mode-switcher" role="group" aria-label="Chế độ điều khiển">
+            <button
+              type="button"
+              onClick={() => {
+                gameAudio.playClick()
+                onControlModeChange("mouse")
+              }}
+              className={`control-mode-pill ${controlMode === "mouse" ? "is-active" : ""}`}
+              title="Kéo và thả ná bằng Chuột hoặc Màn hình cảm ứng"
+            >
+              <MousePointerClick size={13} />
+              <span>CHUỘT</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                gameAudio.playClick()
+                onControlModeChange("ar")
+              }}
+              className={`control-mode-pill is-ar ${controlMode === "ar" ? "is-active" : ""}`}
+              title="Dùng tay trên Camera AR trực tiếp cầm, kéo và thả ná"
+            >
+              <Camera size={13} />
+              <span>AR CAM</span>
+            </button>
+          </div>
+        )}
+
         {playerProfile && companion && (
           <button
             type="button"
@@ -202,7 +239,7 @@ export function GameHeader({
   )
 }
 
-export function QuestionCard({ question, index }: QuestionCardProps) {
+export function QuestionCard({ question, index, controlMode = "mouse" }: QuestionCardProps) {
   const [imgError, setImgError] = useState(false)
   const Illustration =
     questionIllustrations[question.illustrationKey as keyof typeof questionIllustrations] ??
@@ -234,7 +271,11 @@ export function QuestionCard({ question, index }: QuestionCardProps) {
           )}
         </div>
         <h2>“{highlightQuestion(question.question)}”</h2>
-        <p>Em hãy kéo ná và bắn vào bia phù hợp!</p>
+        <p>
+          {controlMode === "ar"
+            ? "Chụm ngón cái & trỏ trước Camera để cầm ná, kéo ngược hướng bia và mở tay để bắn!"
+            : "Em hãy kéo ná và bắn vào bia phù hợp!"}
+        </p>
       </div>
       <div className="question-bulb" aria-hidden="true">
         ?
