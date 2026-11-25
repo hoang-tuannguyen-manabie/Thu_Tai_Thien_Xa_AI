@@ -12,4 +12,8 @@ export type GameVisualState =
 
 export interface GameLayoutProps {
   children: ReactNode
+  soundOn?: boolean
+  onToggleSound?: () => void
+  transitionText?: string | null
+  allowScroll?: boolean
 }

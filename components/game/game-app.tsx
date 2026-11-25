@@ -19,12 +19,21 @@ import { GameArena } from "./game-arena"
 import { GameLayout } from "./game-layout"
 import { GameInstructions } from "./game-instructions"
 import { GameLanding, GameSummary } from "./game-screens"
+import { InteractionModeScreen } from "./interaction-mode-screen"
 import { PlayerSetupModal, type SetupStep } from "./player-setup-modal"
 import type { ControlMode } from "./slingshot-game"
 import type { GameVisualState } from "./game-types"
 
-type Screen = "home" | "instructions" | "game" | "summary"
+type Screen = "home" | "mode" | "instructions" | "game" | "summary"
 type Attempt = ShotResult
+
+const BRIDGE_LABELS: Record<Screen, string> = {
+  home: "01 • KHỞI ĐỘNG ĐẤU TRƯỜNG XẠ THỦ AI",
+  mode: "02 • CHỌN PHƯƠNG THỨC ĐIỀU KHIỂN (CAMERA AR / CHUỘT)",
+  instructions: "03 • QUY TẮC & TRÌNH DIỄN BẮN MẪU CÙNG MANA",
+  game: "04 • ĐẤU TRƯỜNG BẮN BIA PHÂN BIỆT AI",
+  summary: "05 • TỔNG KẾT & BẢNG VINH DANH TOP 1-2-3",
+}
 
 export default function GameApp() {
   const [screen, setScreen] = useState<Screen>("home")
@@ -40,15 +49,17 @@ export default function GameApp() {
   const [interactionState, setInteractionState] = useState<
     "idle" | "dragging" | "aiming" | "shooting" | "collision"
   >("idle")
+  const [transitionText, setTransitionText] = useState<string | null>(null)
+  const [sessionId, setSessionId] = useState<string>("session-1")
 
   // Player Profile & 36 Companion Characters state
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile | null>(null)
   const [playerSetupOpen, setPlayerSetupOpen] = useState(false)
   const [playerSetupStep, setPlayerSetupStep] = useState<SetupStep>("name")
 
-  // Guard to guarantee each question is processed and scored at most once per round
   const scoredQuestionIdsRef = useRef<Set<number>>(new Set())
   const advancingRef = useRef(false)
+  const transitionTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     const saved = loadSavedPlayerProfile()
@@ -60,6 +71,22 @@ export default function GameApp() {
       setPlayerSetupOpen(true)
     }
   }, [])
+
+  const triggerScreenChange = useCallback(
+    (target: Screen, customLabel?: string) => {
+      if (transitionTimerRef.current) {
+        window.clearTimeout(transitionTimerRef.current)
+      }
+      setTransitionText(customLabel ?? BRIDGE_LABELS[target])
+      window.setTimeout(() => {
+        setScreen(target)
+      }, 110)
+      transitionTimerRef.current = window.setTimeout(() => {
+        setTransitionText(null)
+      }, 380)
+    },
+    []
+  )
 
   const openPlayerSetup = useCallback(
     (step?: SetupStep) => {
@@ -81,27 +108,24 @@ export default function GameApp() {
 
     if (questionIndex >= questions.length - 1) {
       setGameplayPhase("GAME_COMPLETE")
-      setScreen("summary")
       if (soundOn) gameAudio.playSummaryFanfare()
+      triggerScreenChange(
+        "summary",
+        "HOÀN THÀNH THỬ THÁCH • TỔNG HỢP KẾT QUẢ"
+      )
       advancingRef.current = false
     } else {
       setQuestionIndex((current) => current + 1)
       setGameplayPhase("QUESTION_ACTIVE")
       advancingRef.current = false
     }
-  }, [questionIndex, questions.length, soundOn])
+  }, [questionIndex, questions.length, soundOn, triggerScreenChange])
 
   useEffect(() => {
-    if (screen !== "game" || paused) return
+    if (screen !== "game" || paused || feedback !== null) return
     const timer = window.setInterval(() => setElapsed((value) => value + 1), 1000)
     return () => window.clearInterval(timer)
-  }, [screen, paused])
-
-  useEffect(() => {
-    if (!feedback || paused) return
-    const timer = window.setTimeout(nextQuestion, 4000)
-    return () => window.clearTimeout(timer)
-  }, [feedback, paused, nextQuestion])
+  }, [screen, paused, feedback])
 
   const beginGame = useCallback(() => {
     scoredQuestionIdsRef.current.clear()
@@ -114,8 +138,9 @@ export default function GameApp() {
     setPaused(false)
     setInteractionState("idle")
     setGameplayPhase("QUESTION_ACTIVE")
-    setScreen("game")
-  }, [])
+    setSessionId(`session-${Date.now()}`)
+    triggerScreenChange("game")
+  }, [triggerScreenChange])
 
   const onShot = useCallback(
     (answer: TargetKind) => {
@@ -193,7 +218,12 @@ export default function GameApp() {
     : "idle"
 
   return (
-    <GameLayout>
+    <GameLayout
+      soundOn={soundOn}
+      onToggleSound={handleToggleSound}
+      transitionText={transitionText}
+      allowScroll={screen === "summary"}
+    >
       {screen === "home" && (
         <GameLanding
           onStart={() => {
@@ -202,7 +232,7 @@ export default function GameApp() {
               return
             }
             setGameplayPhase("READY")
-            setScreen("instructions")
+            triggerScreenChange("mode")
           }}
           playerProfile={playerProfile}
           onOpenPlayerSetup={openPlayerSetup}
@@ -211,11 +241,23 @@ export default function GameApp() {
         />
       )}
 
+      {screen === "mode" && (
+        <InteractionModeScreen
+          controlMode={controlMode}
+          onSelectControlMode={setControlMode}
+          playerProfile={playerProfile}
+          onOpenPlayerSetup={() => openPlayerSetup("confirm")}
+          onBack={() => triggerScreenChange("home")}
+          onNext={() => triggerScreenChange("instructions")}
+          onDirectPlay={beginGame}
+        />
+      )}
+
       {screen === "instructions" && (
         <GameInstructions
           onBack={() => {
             setGameplayPhase("READY")
-            setScreen("home")
+            triggerScreenChange("mode")
           }}
           onPlay={beginGame}
           playerProfile={playerProfile}
@@ -247,6 +289,7 @@ export default function GameApp() {
           onOpenPlayerSetup={() => openPlayerSetup("confirm")}
           controlMode={controlMode}
           onControlModeChange={setControlMode}
+          elapsed={elapsed}
         />
       )}
 
@@ -258,11 +301,13 @@ export default function GameApp() {
           onReplay={beginGame}
           onHome={() => {
             setGameplayPhase("READY")
-            setScreen("home")
+            triggerScreenChange("home")
           }}
           elapsed={elapsed}
           playerProfile={playerProfile}
           onOpenPlayerSetup={openPlayerSetup}
+          controlMode={controlMode}
+          sessionId={sessionId}
         />
       )}
 
