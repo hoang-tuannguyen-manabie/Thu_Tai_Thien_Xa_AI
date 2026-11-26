@@ -1,7 +1,15 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Camera, CameraOff, Maximize2, Minimize2, RefreshCw, Sparkles } from "lucide-react"
+import {
+  Camera,
+  CameraOff,
+  Maximize2,
+  Minimize2,
+  RefreshCw,
+  Sparkles,
+} from "lucide-react"
+import { getHandFrame, resolveHandSpriteFrame } from "@/lib/hand-sprites"
 
 export interface ARHandFrame {
   /** Normalized mirrored X coordinate in [0, 1] (0 = left, 1 = right) */
@@ -10,7 +18,7 @@ export interface ARHandFrame {
   y: number
   /** Whether the user is currently pinching (thumb+index) or grabbing (fist) */
   isGrabbing: boolean
-  /** Normalized pinch closeness in [0, 1] (1 = tight pinch/fist, 0 = wide open hand) */
+  /** Normalized pinch/curl closeness in [0, 1] (1 = tight fist/pinch, 0 = wide open palm) */
   grabStrength: number
   /** Whether a hand is currently visible in the camera frame */
   hasHand: boolean
@@ -44,12 +52,17 @@ function dist2d(a: Landmark, b: Landmark): number {
 
 /**
  * Evaluates whether the detected hand is pinching (thumb tip + index tip close together)
- * or grabbing (fingers curled into palm), with hysteresis to prevent flicker.
+ * or grabbing (fingers curled into palm), returning continuous grabStrength (0..1)
+ * to drive the 16-frame hand sprite animation smoothly.
  */
 function evaluateHandGrab(
   lm: Landmark[],
   currentlyGrabbing: boolean
-): { isGrabbing: boolean; grabStrength: number; controlPoint: { x: number; y: number } } {
+): {
+  isGrabbing: boolean
+  grabStrength: number
+  controlPoint: { x: number; y: number }
+} {
   const wrist = lm[0]
   const thumbTip = lm[4]
   const indexMcp = lm[5]
@@ -65,7 +78,6 @@ function evaluateHandGrab(
   const pinkyPip = lm[18]
   const pinkyTip = lm[20]
 
-  // Reference palm scale (distance from wrist to middle knuckle + index-to-pinky width)
   const palmScale = Math.max(
     0.07,
     (dist2d(wrist, middleMcp) + dist2d(indexMcp, pinkyMcp)) * 0.55
@@ -74,8 +86,9 @@ function evaluateHandGrab(
   // 1. Pinch distance between thumb tip and index tip
   const pinchDist = dist2d(thumbTip, indexTip)
   const pinchRatio = pinchDist / palmScale
+  const pinchStrength = Math.max(0, Math.min(1, 1 - (pinchRatio - 0.25) / 0.65))
 
-  // 2. Finger curl count (for fist grab style)
+  // 2. Finger curl ratio across index, middle, ring, pinky (for fist grab style)
   const fingers = [
     { tip: indexTip, pip: indexPip, mcp: indexMcp },
     { tip: middleTip, pip: middlePip, mcp: middleMcp },
@@ -83,28 +96,30 @@ function evaluateHandGrab(
     { tip: pinkyTip, pip: pinkyPip, mcp: pinkyMcp },
   ]
   let curledCount = 0
+  let curlStrengthSum = 0
   for (const f of fingers) {
     const tipToWrist = dist2d(f.tip, wrist)
     const pipToWrist = dist2d(f.pip, wrist)
-    if (tipToWrist < pipToWrist * 1.04) {
+    const ratio = tipToWrist / Math.max(0.01, pipToWrist)
+    const fingerCurl = Math.max(0, Math.min(1, (1.28 - ratio) / 0.42))
+    curlStrengthSum += fingerCurl
+    if (tipToWrist < pipToWrist * 1.05) {
       curledCount += 1
     }
   }
+  const avgCurlStrength = curlStrengthSum / 4
 
-  // Hysteresis thresholds so grabbing doesn't accidentally drop while pulling
+  // Hysteresis thresholds so grabbing doesn't drop accidentally while pulling
   const pinchThreshold = currentlyGrabbing ? 0.72 : 0.52
   const isPinching = pinchRatio <= pinchThreshold
   const isFist = currentlyGrabbing ? curledCount >= 2 : curledCount >= 3
 
   const isGrabbing = isPinching || isFist
-  const grabStrength = Math.max(
-    0,
-    Math.min(1, isFist ? 1 : 1 - (pinchRatio - 0.25) / 0.65)
-  )
+  const grabStrength = Math.max(pinchStrength, avgCurlStrength)
 
-  // Mirrored control point (midpoint of thumb tip, index tip, and index knuckle)
-  const rawX = 1 - (thumbTip.x * 0.45 + indexTip.x * 0.45 + indexMcp.x * 0.1)
-  const rawY = thumbTip.y * 0.45 + indexTip.y * 0.45 + indexMcp.y * 0.1
+  // Mirrored control point (palm/pinch center)
+  const rawX = 1 - (thumbTip.x * 0.4 + indexTip.x * 0.4 + middleMcp.x * 0.2)
+  const rawY = thumbTip.y * 0.4 + indexTip.y * 0.4 + middleMcp.y * 0.2
 
   return {
     isGrabbing,
@@ -128,10 +143,12 @@ export function ARHandController({
 
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading")
   const [errorMessage, setErrorMessage] = useState<string>("")
-  const [expanded, setExpanded] = useState(false)
+  // Default to "full-stage" so the player sees their real hand & body across the whole shooting arena!
+  const [fullStageCamera, setFullStageCamera] = useState(true)
   const [retryCount, setRetryCount] = useState(0)
-  const [gestureLabel, setGestureLabel] = useState<string>("ĐƯA TAY VÀO CAMERA")
+  const [activeSpriteFrame, setActiveSpriteFrame] = useState<number>(16)
   const [isGrabbingUI, setIsGrabbingUI] = useState(false)
+  const [hasHandUI, setHasHandUI] = useState(false)
 
   useEffect(() => {
     if (!enabled) return
@@ -142,22 +159,23 @@ export function ARHandController({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let handLandmarker: any = null
 
-    // Smoothed state
     let smoothX = 0.5
     let smoothY = 0.65
     let hasInitializedPos = false
     let grabbingState = false
     let grabConfirmFrames = 0
     let releaseConfirmFrames = 0
+    let releaseAnimFramesLeft = 0
     let lastInferenceTime = 0
     let lastLandmarks: Landmark[] | null = null
+    let lastUiFrameNum = 16
+    let lastHasHand = false
 
     setStatus("loading")
     setErrorMessage("")
 
     const initAR = async () => {
       try {
-        // Dynamically import MediaPipe Vision bundle from local public/vendor with CDN fallback
         const dynamicImport = new Function("url", "return import(url)") as (
           url: string
         ) => Promise<{
@@ -218,8 +236,8 @@ export function ARHandController({
 
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            width: { ideal: 480, max: 640 },
-            height: { ideal: 270, max: 360 },
+            width: { ideal: 640, max: 960 },
+            height: { ideal: 360, max: 540 },
             facingMode: "user",
             frameRate: { ideal: 30, max: 30 },
           },
@@ -241,7 +259,7 @@ export function ARHandController({
         if (!active) return
         setStatus("error")
         setErrorMessage(
-          "Không thể mở Camera hoặc tải mô hình nhận diện tay. Vui lòng kiểm tra quyền Camera trên trình duyệt."
+          "Không thể mở Camera. Vui lòng cấp quyền Camera trên trình duyệt hoặc chuyển sang chế độ Chuột."
         )
         return
       }
@@ -252,13 +270,15 @@ export function ARHandController({
         const canvas = canvasRef.current
 
         if (video && canvas && video.readyState >= 2 && handLandmarker) {
-          if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-            canvas.width = video.videoWidth || 480
-            canvas.height = video.videoHeight || 270
+          if (
+            canvas.width !== video.videoWidth ||
+            canvas.height !== video.videoHeight
+          ) {
+            canvas.width = video.videoWidth || 640
+            canvas.height = video.videoHeight || 360
           }
 
-          // Run MediaPipe inference at ~30 FPS (every 32ms)
-          if (now - lastInferenceTime >= 32) {
+          if (now - lastInferenceTime >= 30) {
             lastInferenceTime = now
             try {
               const res = handLandmarker.detectForVideo(video, now)
@@ -278,38 +298,34 @@ export function ARHandController({
             const h = canvas.height
             ctx.clearRect(0, 0, w, h)
 
-            // Draw subtle slingshot anchor guide zone in camera preview
-            ctx.save()
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.28)"
-            ctx.setLineDash([4, 4])
-            ctx.lineWidth = 1.5
-            ctx.beginPath()
-            ctx.arc(w * 0.5, h * 0.55, h * 0.22, 0, Math.PI * 2)
-            ctx.stroke()
-            ctx.restore()
-
             if (lastLandmarks && !disabledRef.current) {
+              if (!lastHasHand) {
+                lastHasHand = true
+                setHasHandUI(true)
+              }
+
               const evalRes = evaluateHandGrab(lastLandmarks, grabbingState)
 
-              // Debounce grab/release by 2 consecutive frames for rock-solid control
               if (evalRes.isGrabbing) {
                 grabConfirmFrames += 1
                 releaseConfirmFrames = 0
+                releaseAnimFramesLeft = 0
                 if (!grabbingState && grabConfirmFrames >= 2) {
                   grabbingState = true
                   setIsGrabbingUI(true)
-                  setGestureLabel("🎯 ĐANG KÉO NÁ • MỞ TAY ĐỂ BẮN!")
                 }
               } else {
                 releaseConfirmFrames += 1
                 grabConfirmFrames = 0
                 if (grabbingState && releaseConfirmFrames >= 2) {
                   grabbingState = false
+                  releaseAnimFramesLeft = 18 // Show splayed release hand frames (11..14)
                   setIsGrabbingUI(false)
-                  setGestureLabel("👌 CHỤM NGÓN TAY ĐỂ CẦM NÁ")
-                } else if (!grabbingState) {
-                  setGestureLabel("👌 CHỤM NGÓN TAY ĐỂ CẦM NÁ")
                 }
+              }
+
+              if (releaseAnimFramesLeft > 0) {
+                releaseAnimFramesLeft -= 1
               }
 
               if (!hasInitializedPos) {
@@ -317,15 +333,40 @@ export function ARHandController({
                 smoothY = evalRes.controlPoint.y
                 hasInitializedPos = true
               } else {
-                // Smooth EMA filter (0.42 responsiveness)
-                smoothX += (evalRes.controlPoint.x - smoothX) * 0.42
-                smoothY += (evalRes.controlPoint.y - smoothY) * 0.42
+                smoothX += (evalRes.controlPoint.x - smoothX) * 0.44
+                smoothY += (evalRes.controlPoint.y - smoothY) * 0.44
               }
 
-              // Draw mirrored hand skeleton on HUD canvas
+              // Compute current sprite frame (1..16) for HUD status indicator
+              const pullDistApprox = Math.min(
+                1,
+                Math.hypot(smoothX - 0.5, smoothY - 0.52) / 0.25
+              )
+              const releaseOffset =
+                releaseAnimFramesLeft > 0
+                  ? Math.min(3, Math.floor((18 - releaseAnimFramesLeft) / 4))
+                  : null
+              const spriteInfo = resolveHandSpriteFrame({
+                hasHand: true,
+                isGrabbing: grabbingState,
+                grabStrength: evalRes.grabStrength,
+                pullPower: pullDistApprox,
+                isNearPouch: pullDistApprox < 0.35,
+                releaseFrameOffset: releaseOffset,
+              })
+              if (spriteInfo.frameNumber !== lastUiFrameNum) {
+                lastUiFrameNum = spriteInfo.frameNumber
+                setActiveSpriteFrame(spriteInfo.frameNumber)
+              }
+
+              // Draw mirrored 21-point hand skeleton directly over the player's real hand on video!
               ctx.save()
-              ctx.lineWidth = 2.5
-              ctx.strokeStyle = grabbingState ? "#ff9b42" : "#42b883"
+              ctx.lineCap = "round"
+              ctx.lineJoin = "round"
+
+              // Outer dark outline for cartoon contrast on live video
+              ctx.lineWidth = 6
+              ctx.strokeStyle = "rgba(15, 23, 42, 0.72)"
               for (const [i1, i2] of HAND_CONNECTIONS) {
                 const p1 = lastLandmarks[i1]
                 const p2 = lastLandmarks[i2]
@@ -335,27 +376,34 @@ export function ARHandController({
                 ctx.stroke()
               }
 
+              // Inner vibrant skeleton line
+              ctx.lineWidth = 3.2
+              ctx.strokeStyle = grabbingState ? "#ff9b42" : "#22c55e"
+              for (const [i1, i2] of HAND_CONNECTIONS) {
+                const p1 = lastLandmarks[i1]
+                const p2 = lastLandmarks[i2]
+                ctx.beginPath()
+                ctx.moveTo((1 - p1.x) * w, p1.y * h)
+                ctx.lineTo((1 - p2.x) * w, p2.y * h)
+                ctx.stroke()
+              }
+
+              // Draw 21 landmark joints
               for (let idx = 0; idx < lastLandmarks.length; idx += 1) {
                 const pt = lastLandmarks[idx]
-                const isPinchTip = idx === 4 || idx === 8
-                ctx.fillStyle = isPinchTip
+                const isTip = idx === 4 || idx === 8 || idx === 12 || idx === 16 || idx === 20
+                ctx.fillStyle = isTip
                   ? grabbingState
                     ? "#ff9b42"
                     : "#ffffff"
-                  : "#395ad2"
+                  : "#2563eb"
+                ctx.strokeStyle = "#0f172a"
+                ctx.lineWidth = 1.8
                 ctx.beginPath()
-                ctx.arc((1 - pt.x) * w, pt.y * h, isPinchTip ? 5.5 : 3.2, 0, Math.PI * 2)
+                ctx.arc((1 - pt.x) * w, pt.y * h, isTip ? 6 : 4, 0, Math.PI * 2)
                 ctx.fill()
+                ctx.stroke()
               }
-
-              // Draw glowing active control point
-              ctx.fillStyle = grabbingState ? "#ff9b42" : "#42b883"
-              ctx.strokeStyle = "#ffffff"
-              ctx.lineWidth = 2.5
-              ctx.beginPath()
-              ctx.arc(smoothX * w, smoothY * h, grabbingState ? 10 : 7, 0, Math.PI * 2)
-              ctx.fill()
-              ctx.stroke()
               ctx.restore()
 
               onHandFrameRef.current({
@@ -366,13 +414,18 @@ export function ARHandController({
                 hasHand: true,
               })
             } else {
+              if (lastHasHand) {
+                lastHasHand = false
+                setHasHandUI(false)
+              }
               if (grabbingState) {
                 grabbingState = false
                 setIsGrabbingUI(false)
               }
-              setGestureLabel(
-                disabledRef.current ? "ĐANG CHỜ LƯỢT BẮN..." : "✋ ĐƯA TAY VÀO CAMERA"
-              )
+              if (lastUiFrameNum !== 16) {
+                lastUiFrameNum = 16
+                setActiveSpriteFrame(16)
+              }
               onHandFrameRef.current({
                 x: smoothX,
                 y: smoothY,
@@ -410,85 +463,174 @@ export function ARHandController({
 
   if (!enabled) return null
 
+  const currentSprite = getHandFrame(activeSpriteFrame)
+
   return (
-    <aside
-      className={`ar-camera-hud ${expanded ? "is-expanded" : ""} ${isGrabbingUI ? "is-grabbing" : ""}`}
-      aria-label="Khung điều khiển Camera AR nhận diện bàn tay"
-    >
-      <div className="ar-camera-hud-header">
-        <span className="ar-camera-badge">
-          <span className="ar-live-dot" />
-          <Camera size={12} />
-          <b>AR HAND CAM</b>
-        </span>
-        <div className="ar-camera-actions">
-          <button
-            type="button"
-            onClick={() => setExpanded((prev) => !prev)}
-            className="ar-hud-icon-btn"
-            title={expanded ? "Thu nhỏ khung Camera AR" : "Phóng to khung Camera AR"}
-            aria-label={expanded ? "Thu nhỏ khung Camera AR" : "Phóng to khung Camera AR"}
-          >
-            {expanded ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-          </button>
-          {onFallbackToMouse && (
-            <button
-              type="button"
-              onClick={onFallbackToMouse}
-              className="ar-hud-switch-btn"
-              title="Chuyển sang chế độ Chuột / Cảm ứng"
-            >
-              Dùng Chuột
-            </button>
+    <>
+      {/* =====================================================================
+       * LIVE AR CAMERA VIDEO + 21-LANDMARK HAND SKELETON LAYER
+       * - In fullStageCamera=true (DEFAULT): Covers the entire shooting stage
+       *   so the player sees their whole arm & hand pulling the slingshot!
+       * - In fullStageCamera=false: Docks as a large resizable panel on left.
+       * ===================================================================== */}
+      <div
+        className={
+          fullStageCamera
+            ? "ar-stage-video-layer"
+            : `ar-camera-hud is-expanded ${isGrabbingUI ? "is-grabbing" : ""}`
+        }
+        aria-label="Khung hình Camera AR trực tiếp nhận diện tay người bắn"
+      >
+        {!fullStageCamera && (
+          <div className="ar-camera-hud-header">
+            <span className="ar-camera-badge">
+              <span className="ar-live-dot" />
+              <Camera size={12} />
+              <b>CAMERA AR TAY NGƯỜI BẮN</b>
+            </span>
+            <div className="ar-camera-actions">
+              <button
+                type="button"
+                onClick={() => setFullStageCamera(true)}
+                className="ar-hud-switch-btn"
+                title="Mở rộng Camera AR toàn sân đấu"
+              >
+                <Maximize2 size={11} className="inline mr-1" />
+                Toàn sân
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className={fullStageCamera ? "ar-stage-video-wrap" : "ar-camera-viewport"}>
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            className={fullStageCamera ? "ar-stage-video" : "ar-camera-video"}
+          />
+          <canvas
+            ref={canvasRef}
+            className={fullStageCamera ? "ar-stage-canvas" : "ar-camera-canvas"}
+          />
+
+          {status === "loading" && (
+            <div className="ar-camera-overlay">
+              <Sparkles size={22} className="animate-spin text-[#ff9b42]" />
+              <span className="text-xs sm:text-sm font-black">
+                Đang khởi động Camera AR nhận diện bàn tay người bắn...
+              </span>
+            </div>
+          )}
+
+          {status === "error" && (
+            <div className="ar-camera-overlay is-error">
+              <CameraOff size={22} className="text-[#ef5350]" />
+              <span className="text-xs font-bold">
+                {errorMessage || "Không mở được Camera"}
+              </span>
+              <div className="flex items-center gap-2 mt-1.5">
+                <button
+                  type="button"
+                  onClick={() => setRetryCount((c) => c + 1)}
+                  className="ar-retry-btn"
+                >
+                  <RefreshCw size={12} /> Thử lại Camera
+                </button>
+                {onFallbackToMouse && (
+                  <button
+                    type="button"
+                    onClick={onFallbackToMouse}
+                    className="ar-retry-btn is-secondary"
+                  >
+                    Chơi bằng Chuột
+                  </button>
+                )}
+              </div>
+            </div>
           )}
         </div>
       </div>
 
-      <div className="ar-camera-viewport">
-        <video
-          ref={videoRef}
-          playsInline
-          muted
-          className="ar-camera-video"
-        />
-        <canvas ref={canvasRef} className="ar-camera-canvas" />
+      {/* =====================================================================
+       * FLOATING AR HAND SPRITE STATUS & CAMERA VIEW BAR (BOTTOM-LEFT OF STAGE)
+       * Displays the current cartoon hand sprite (frames 1..16) matching the
+       * player's real hand state + toggle between Full-Stage Camera & Corner PIP
+       * ===================================================================== */}
+      <div
+        className={`ar-hand-status-dock ${
+          isGrabbingUI ? "is-grabbing" : hasHandUI ? "is-connected" : "is-waiting"
+        }`}
+      >
+        <div className="ar-hand-sprite-box">
+          <img
+            src={currentSprite.src}
+            alt={currentSprite.labelVi}
+            className="w-full h-full object-contain drop-shadow-[0_2px_4px_rgba(0,0,0,0.25)]"
+          />
+          <span
+            className={`ar-hand-status-dot ${
+              isGrabbingUI
+                ? "bg-[#f47920]"
+                : hasHandUI
+                ? "bg-[#16a34a]"
+                : "bg-[#f59e0b]"
+            }`}
+          />
+        </div>
 
-        {status === "loading" && (
-          <div className="ar-camera-overlay">
-            <Sparkles size={18} className="animate-spin text-[#ff9b42]" />
-            <span>Đang khởi động AI nhận diện bàn tay...</span>
+        <div className="ar-hand-status-copy">
+          <div className="flex items-center gap-1.5">
+            <span className="ar-hand-badge-tag">
+              {isGrabbingUI
+                ? "ĐANG NẮM KÉO NÁ"
+                : hasHandUI
+                ? "ĐÃ KẾT NỐI TAY AR"
+                : "CHỜ KẾT NỐI TAY"}
+            </span>
+            <span className="text-[9px] font-mono font-black text-slate-400">
+              #{String(currentSprite.frameNumber).padStart(2, "0")}/16
+            </span>
           </div>
-        )}
+          <b className="ar-hand-status-title">{currentSprite.labelVi}</b>
+        </div>
 
-        {status === "error" && (
-          <div className="ar-camera-overlay is-error">
-            <CameraOff size={18} className="text-[#ef5350]" />
-            <span>{errorMessage || "Không mở được Camera"}</span>
-            <div className="flex items-center gap-1.5 mt-1">
-              <button
-                type="button"
-                onClick={() => setRetryCount((c) => c + 1)}
-                className="ar-retry-btn"
-              >
-                <RefreshCw size={11} /> Thử lại
-              </button>
-              {onFallbackToMouse && (
-                <button
-                  type="button"
-                  onClick={onFallbackToMouse}
-                  className="ar-retry-btn is-secondary"
-                >
-                  Chơi bằng Chuột
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+        <div className="flex items-center gap-1 ml-1">
+          <button
+            type="button"
+            onClick={() => setFullStageCamera((prev) => !prev)}
+            className="ar-dock-btn"
+            title={
+              fullStageCamera
+                ? "Thu gọn Camera về khung góc"
+                : "Mở rộng Camera toàn sân đấu để thấy rõ tay người bắn"
+            }
+          >
+            {fullStageCamera ? (
+              <>
+                <Minimize2 size={12} />
+                <span className="hidden sm:inline">Khung góc</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 size={12} />
+                <span className="hidden sm:inline">Toàn sân</span>
+              </>
+            )}
+          </button>
 
-      <div className={`ar-camera-status-bar ${isGrabbingUI ? "is-grabbing" : ""}`}>
-        <span>{gestureLabel}</span>
+          {onFallbackToMouse && (
+            <button
+              type="button"
+              onClick={onFallbackToMouse}
+              className="ar-dock-btn is-mouse"
+              title="Chuyển sang dùng Chuột / Cảm ứng"
+            >
+              <span>Chuột</span>
+            </button>
+          )}
+        </div>
       </div>
-    </aside>
+    </>
   )
 }

@@ -1,10 +1,21 @@
 "use client"
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import type { MutableRefObject, PointerEvent } from "react"
 import type { TargetKind } from "@/lib/game-data"
 import { GAME_SCORING } from "@/lib/game-logic"
 import { gameAudio } from "@/lib/audio"
+import {
+  getHandFrame,
+  resolveHandSpriteFrame,
+} from "@/lib/hand-sprites"
 import type { ARHandFrame } from "./ar-hand-controller"
 import type { GameVisualState } from "./game-types"
 import {
@@ -72,6 +83,7 @@ export function SlingshotGame({
   const frameRef = useRef<number | null>(null)
   const impactTimerRef = useRef<number | null>(null)
   const missTimerRef = useRef<number | null>(null)
+  const releaseSpriteTimerRef = useRef<number | null>(null)
   const pointerIdRef = useRef<number | null>(null)
   const shotRef = useRef<Shot | null>(null)
   const lastTimeRef = useRef<number | null>(null)
@@ -94,12 +106,22 @@ export function SlingshotGame({
   const [impact, setImpact] = useState<CollisionResult | null>(null)
   const [impactPower, setImpactPower] = useState(0)
   const [released, setReleased] = useState(false)
+  const [releasePoint, setReleasePoint] = useState<Point | null>(null)
+  const [releaseFrameOffset, setReleaseFrameOffset] = useState<number | null>(null)
+
   const [arCursor, setArCursor] = useState<{
     x: number
     y: number
     isGrabbing: boolean
-    visible: boolean
-  }>({ x: 500, y: 310, isGrabbing: false, visible: false })
+    grabStrength: number
+    hasHand: boolean
+  }>({
+    x: 500,
+    y: 310,
+    isGrabbing: false,
+    grabStrength: 0,
+    hasHand: false,
+  })
 
   const physics = useMemo(
     () => createPhysicsConfig(scene.width, scene.height, scene.targets),
@@ -112,7 +134,6 @@ export function SlingshotGame({
   const slingScaleY = scene.height / 420
   const unitScale = Math.min(slingScaleX, slingScaleY)
 
-  // Fork tip anchor positions for the elastic bands (preserving exact physics geometry)
   const leftFork = {
     x: physics.anchor.x - scene.width * 0.036,
     y: physics.anchor.y - scene.height * (42 / 420),
@@ -205,9 +226,12 @@ export function SlingshotGame({
     if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
     if (impactTimerRef.current !== null) window.clearTimeout(impactTimerRef.current)
     if (missTimerRef.current !== null) window.clearTimeout(missTimerRef.current)
+    if (releaseSpriteTimerRef.current !== null)
+      window.clearInterval(releaseSpriteTimerRef.current)
     frameRef.current = null
     impactTimerRef.current = null
     missTimerRef.current = null
+    releaseSpriteTimerRef.current = null
     lastTimeRef.current = null
     accumulatorRef.current = 0
     shotRef.current = null
@@ -221,6 +245,8 @@ export function SlingshotGame({
     setImpact(null)
     setImpactPower(0)
     setReleased(false)
+    setReleasePoint(null)
+    setReleaseFrameOffset(null)
     setDragging(false)
     setPull(physics.anchor)
     currentPullRef.current = physics.anchor
@@ -232,9 +258,34 @@ export function SlingshotGame({
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
       if (impactTimerRef.current !== null) window.clearTimeout(impactTimerRef.current)
       if (missTimerRef.current !== null) window.clearTimeout(missTimerRef.current)
+      if (releaseSpriteTimerRef.current !== null)
+        window.clearInterval(releaseSpriteTimerRef.current)
     },
     []
   )
+
+  // Plays the 4-frame open-hand release sequence (frames 11 -> 12 -> 13 -> 14) on release
+  const triggerReleaseHandAnimation = useCallback((atPoint: Point) => {
+    if (releaseSpriteTimerRef.current !== null) {
+      window.clearInterval(releaseSpriteTimerRef.current)
+    }
+    setReleasePoint(atPoint)
+    setReleaseFrameOffset(0)
+    let step = 0
+    releaseSpriteTimerRef.current = window.setInterval(() => {
+      step += 1
+      if (step <= 3) {
+        setReleaseFrameOffset(step)
+      } else {
+        if (releaseSpriteTimerRef.current !== null) {
+          window.clearInterval(releaseSpriteTimerRef.current)
+          releaseSpriteTimerRef.current = null
+        }
+        setReleaseFrameOffset(null)
+        setReleasePoint(null)
+      }
+    }, 95)
+  }, [])
 
   const animate = useCallback(
     (time: number) => {
@@ -332,6 +383,7 @@ export function SlingshotGame({
       arDraggingRef.current = false
       setDragging(false)
       setReleased(true)
+      triggerReleaseHandAnimation(clampedPull)
       onInteractionStateChange?.("shooting")
       if (soundOn) {
         gameAudio.playSlingshotRelease(shotPower)
@@ -347,7 +399,14 @@ export function SlingshotGame({
       accumulatorRef.current = 0
       frameRef.current = requestAnimationFrame(animate)
     },
-    [animate, disabled, onInteractionStateChange, physics, soundOn]
+    [
+      animate,
+      disabled,
+      onInteractionStateChange,
+      physics,
+      soundOn,
+      triggerReleaseHandAnimation,
+    ]
   )
 
   // Connect AR Hand Frame callback for direct grab -> pull -> release slingshot shooting
@@ -362,13 +421,14 @@ export function SlingshotGame({
           setPull(physics.anchor)
           currentPullRef.current = physics.anchor
         }
-        setArCursor((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+        setArCursor((prev) =>
+          prev.hasHand ? { ...prev, hasHand: false, isGrabbing: false } : prev
+        )
         return
       }
 
       if (!frame.hasHand) {
         if (arDraggingRef.current) {
-          // If hand disappears mid-pull with enough tension, release shot; otherwise reset
           const d = dragDistance(currentPullRef.current, physics.anchor)
           arDraggingRef.current = false
           setDragging(false)
@@ -380,14 +440,17 @@ export function SlingshotGame({
             onInteractionStateChange?.("idle")
           }
         }
-        setArCursor((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+        setArCursor((prev) =>
+          prev.hasHand
+            ? { ...prev, hasHand: false, isGrabbing: false, grabStrength: 0 }
+            : prev
+        )
         return
       }
 
       const sensitivityX = physics.maxDragDistance * 3.1
       const sensitivityY = physics.maxDragDistance * 2.8
 
-      // Map normalized webcam coordinates to arena cursor near the slingshot
       const cursorX = Math.max(
         36,
         Math.min(scene.width - 36, physics.anchor.x + (frame.x - 0.5) * sensitivityX)
@@ -399,7 +462,6 @@ export function SlingshotGame({
 
       if (frame.isGrabbing) {
         if (!arDraggingRef.current) {
-          // Begin grabbing the slingshot pouch
           arDraggingRef.current = true
           arGrabOriginRef.current = { x: frame.x, y: frame.y }
           setReleased(false)
@@ -407,7 +469,6 @@ export function SlingshotGame({
           gameAudio.init()
         }
 
-        // Combine relative pull from grab origin with absolute hand position offset from center
         const relX = (frame.x - arGrabOriginRef.current.x) * sensitivityX * 0.85
         const relY = (frame.y - arGrabOriginRef.current.y) * sensitivityY * 0.85
         const absX = (frame.x - 0.5) * sensitivityX * 0.45
@@ -424,7 +485,8 @@ export function SlingshotGame({
           x: nextPull.x,
           y: nextPull.y,
           isGrabbing: true,
-          visible: true,
+          grabStrength: frame.grabStrength,
+          hasHand: true,
         })
 
         const d = dragDistance(nextPull, physics.anchor)
@@ -434,9 +496,7 @@ export function SlingshotGame({
         }
         onInteractionStateChange?.(d >= physics.minDragDistance ? "aiming" : "dragging")
       } else {
-        // Hand is open
         if (arDraggingRef.current) {
-          // Transition from grabbing -> open hand: RELEASE & SHOOT!
           arDraggingRef.current = false
           setDragging(false)
           const finalPull = currentPullRef.current
@@ -444,7 +504,8 @@ export function SlingshotGame({
             x: cursorX,
             y: cursorY,
             isGrabbing: false,
-            visible: true,
+            grabStrength: frame.grabStrength,
+            hasHand: true,
           })
           launch(finalPull)
         } else {
@@ -452,7 +513,8 @@ export function SlingshotGame({
             x: cursorX,
             y: cursorY,
             isGrabbing: false,
-            visible: true,
+            grabStrength: frame.grabStrength,
+            hasHand: true,
           })
         }
       }
@@ -561,6 +623,22 @@ export function SlingshotGame({
   const coreRadius = 17.5 * unitScale
   const pouchAngle = dragging && distance >= physics.minDragDistance ? aimingAngleDeg + 90 : 0
 
+  // Resolve current Cartoon Hand Sprite (frames 1..16) for the arena hand/slingshot overlay
+  const isNearPouch =
+    dragDistance(arCursor, physics.anchor) <= physics.maxDragDistance * 1.15
+  const activeHandSprite = resolveHandSpriteFrame({
+    hasHand: controlMode === "ar" ? arCursor.hasHand : dragging,
+    isGrabbing: dragging,
+    grabStrength:
+      controlMode === "ar" ? arCursor.grabStrength : dragging ? 1 : 0,
+    pullPower: power,
+    isNearPouch: controlMode === "ar" ? isNearPouch : true,
+    releaseFrameOffset,
+  })
+  const handSpriteSize = 72 * unitScale
+  // Flip hand sprite horizontally when pulling right so the cartoon wrist/fingers orient naturally
+  const pullingRight = visualPull.x > physics.anchor.x + 8
+
   return (
     <svg
       ref={svgRef}
@@ -586,40 +664,109 @@ export function SlingshotGame({
       onLostPointerCapture={cancelDrag}
     >
       <defs>
-        {/* 2D Cartoon Wood Gradient */}
         <linearGradient id="cartoonSlingWood" x1="0%" y1="0%" x2="100%" y2="0%">
           <stop offset="0%" stopColor="#E89D54" />
           <stop offset="50%" stopColor="#BD6E2A" />
           <stop offset="100%" stopColor="#8A4A16" />
         </linearGradient>
 
-        {/* 2D Cartoon Blue Arcade Handle Wrap */}
         <linearGradient id="cartoonSlingGrip" x1="0%" y1="0%" x2="100%" y2="0%">
           <stop offset="0%" stopColor="#5E81F4" />
           <stop offset="50%" stopColor="#395AD2" />
           <stop offset="100%" stopColor="#203899" />
         </linearGradient>
 
-        {/* 2D Cartoon Elastic Band Gradient */}
         <linearGradient id="cartoonElasticBand" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor={dragPower >= 0.75 ? "#FF5733" : "#FFB347"} />
           <stop offset="100%" stopColor={dragPower >= 0.75 ? "#C70039" : "#F47920"} />
         </linearGradient>
 
-        {/* 2D Cartoon AI Energy Orb Gradient */}
         <radialGradient id="cartoonOrbBlue" cx="35%" cy="30%" r="70%">
           <stop offset="0%" stopColor="#B8D0FF" />
           <stop offset="48%" stopColor="#395AD2" />
           <stop offset="100%" stopColor="#172B7A" />
         </radialGradient>
 
-        {/* Power Orb Gradient when pulled >= 75% */}
         <radialGradient id="cartoonOrbPower" cx="35%" cy="30%" r="70%">
           <stop offset="0%" stopColor="#FFF3B0" />
           <stop offset="48%" stopColor="#FF7A2F" />
           <stop offset="100%" stopColor="#B91C1C" />
         </radialGradient>
       </defs>
+
+      {/* =====================================================================
+       * AR HAND CONNECTION DOCKING FRAME AT SLINGSHOT POUCH (WHEN IN AR MODE)
+       * Shows the docking target box, connection tether line, and guide sprite
+       * ===================================================================== */}
+      {controlMode === "ar" && !dragging && !shot && !disabled && (
+        <g className="ar-connection-dock-frame" aria-hidden="true">
+          {/* Glowing Connection Tether Beam from detected hand to Slingshot Pouch */}
+          {arCursor.hasHand && (
+            <line
+              x1={arCursor.x}
+              y1={arCursor.y}
+              x2={physics.anchor.x}
+              y2={physics.anchor.y}
+              stroke="#16a34a"
+              strokeWidth={3 * unitScale}
+              strokeDasharray="6 6"
+              opacity={0.85}
+            />
+          )}
+
+          {/* Docking Frame Box around Slingshot Pouch */}
+          <g transform={`translate(${physics.anchor.x} ${physics.anchor.y})`}>
+            <rect
+              x={-54 * unitScale}
+              y={-52 * unitScale}
+              width={108 * unitScale}
+              height={104 * unitScale}
+              rx={22 * unitScale}
+              fill={
+                arCursor.hasHand
+                  ? "rgba(22, 163, 74, 0.14)"
+                  : "rgba(245, 158, 11, 0.14)"
+              }
+              stroke={arCursor.hasHand ? "#16a34a" : "#f59e0b"}
+              strokeWidth={2.8 * unitScale}
+              strokeDasharray="10 6"
+            />
+            {/* Corner Targeting Brackets */}
+            <path
+              d={`M ${-56 * unitScale} ${-34 * unitScale} L ${-56 * unitScale} ${-54 * unitScale} L ${-36 * unitScale} ${-54 * unitScale} M ${36 * unitScale} ${-54 * unitScale} L ${56 * unitScale} ${-54 * unitScale} L ${56 * unitScale} ${-34 * unitScale} M ${-56 * unitScale} ${34 * unitScale} L ${-56 * unitScale} ${54 * unitScale} L ${-36 * unitScale} ${54 * unitScale} M ${36 * unitScale} ${54 * unitScale} L ${56 * unitScale} ${54 * unitScale} L ${56 * unitScale} ${34 * unitScale}`}
+              fill="none"
+              stroke={arCursor.hasHand ? "#15803d" : "#d97706"}
+              strokeWidth={4 * unitScale}
+              strokeLinecap="round"
+            />
+            {/* Ghost Guide Hand Sprite inside Docking Frame when waiting for hand */}
+            {!arCursor.hasHand && (
+              <image
+                href={getHandFrame(16).src}
+                x={14 * unitScale}
+                y={-42 * unitScale}
+                width={50 * unitScale}
+                height={50 * unitScale}
+                opacity={0.85}
+              />
+            )}
+            <text
+              y={-60 * unitScale}
+              textAnchor="middle"
+              fill={arCursor.hasHand ? "#15803d" : "#b45309"}
+              stroke="#FFFFFF"
+              strokeWidth={3.5 * unitScale}
+              paintOrder="stroke"
+              fontSize={10.5 * unitScale}
+              fontWeight="900"
+            >
+              {arCursor.hasHand
+                ? "👌 ĐÃ KẾT NỐI TAY • NẮM TAY ĐỂ CẦM NÁ"
+                : "✋ KHUNG KẾT NỐI TAY AR"}
+            </text>
+          </g>
+        </g>
+      )}
 
       {/* Aiming Trajectory Preview */}
       {trajectory && trajectory.points.length > 0 && (
@@ -645,14 +792,8 @@ export function SlingshotGame({
           })}
           {trajectory.hit && (
             <g transform={`translate(${trajectory.hit.point.x} ${trajectory.hit.point.y})`}>
-              <circle
-                className="aim-marker"
-                r={physics.projectileRadius + 9}
-              />
-              <circle
-                r={4}
-                fill="currentColor"
-              />
+              <circle className="aim-marker" r={physics.projectileRadius + 9} />
+              <circle r={4} fill="currentColor" />
             </g>
           )}
         </g>
@@ -671,7 +812,7 @@ export function SlingshotGame({
         />
       ))}
 
-      {/* Back Elastic Band (Cartoon 2D layered with outline & highlight) */}
+      {/* Back Elastic Band */}
       <g aria-hidden="true">
         <path
           d={`M ${leftFork.x} ${leftFork.y} Q ${(leftFork.x + visualPull.x) / 2} ${(leftFork.y + visualPull.y) / 2 + 4 * slingScaleY} ${visualPull.x} ${visualPull.y}`}
@@ -689,11 +830,8 @@ export function SlingshotGame({
         />
       </g>
 
-      {/* =====================================================================
-       * 2D CARTOON WOODEN SLINGSHOT FRAME
-       * ===================================================================== */}
+      {/* 2D Cartoon Wooden Slingshot Frame */}
       <g className="sling-frame" aria-hidden="true">
-        {/* Ground Shadow */}
         <ellipse
           cx={physics.anchor.x}
           cy={gripY + 12 * slingScaleY}
@@ -702,7 +840,6 @@ export function SlingshotGame({
           className="sling-shadow"
         />
 
-        {/* Y-Fork Dark Cartoon Outline */}
         <path
           d={`M ${physics.anchor.x} ${gripY} L ${physics.anchor.x} ${forkJointY} C ${physics.anchor.x - 6 * slingScaleX} ${physics.anchor.y - 4 * slingScaleY} ${leftFork.x + 2 * slingScaleX} ${leftFork.y + 24 * slingScaleY} ${leftFork.x} ${forkTopY} M ${physics.anchor.x} ${forkJointY} C ${physics.anchor.x + 6 * slingScaleX} ${physics.anchor.y - 4 * slingScaleY} ${rightFork.x - 2 * slingScaleX} ${rightFork.y + 24 * slingScaleY} ${rightFork.x} ${forkTopY}`}
           fill="none"
@@ -712,7 +849,6 @@ export function SlingshotGame({
           strokeLinejoin="round"
         />
 
-        {/* Y-Fork Warm Wood Fill */}
         <path
           d={`M ${physics.anchor.x} ${gripY} L ${physics.anchor.x} ${forkJointY} C ${physics.anchor.x - 6 * slingScaleX} ${physics.anchor.y - 4 * slingScaleY} ${leftFork.x + 2 * slingScaleX} ${leftFork.y + 24 * slingScaleY} ${leftFork.x} ${forkTopY} M ${physics.anchor.x} ${forkJointY} C ${physics.anchor.x + 6 * slingScaleX} ${physics.anchor.y - 4 * slingScaleY} ${rightFork.x - 2 * slingScaleX} ${rightFork.y + 24 * slingScaleY} ${rightFork.x} ${forkTopY}`}
           fill="none"
@@ -722,7 +858,6 @@ export function SlingshotGame({
           strokeLinejoin="round"
         />
 
-        {/* Cartoon Wood Specular Highlights */}
         <path
           d={`M ${physics.anchor.x - 3 * slingScaleX} ${forkJointY - 2 * slingScaleY} C ${physics.anchor.x - 9 * slingScaleX} ${physics.anchor.y - 6 * slingScaleY} ${leftFork.x - 1 * slingScaleX} ${leftFork.y + 20 * slingScaleY} ${leftFork.x - 2 * slingScaleX} ${forkTopY + 3 * slingScaleY}`}
           fill="none"
@@ -740,7 +875,6 @@ export function SlingshotGame({
           opacity={0.75}
         />
 
-        {/* Fork Red-Orange Rubber Band Tie Wraps */}
         <rect
           x={leftFork.x - 12 * slingScaleX}
           y={leftFork.y - 6 * slingScaleY}
@@ -762,7 +896,6 @@ export function SlingshotGame({
           strokeWidth={3 * unitScale}
         />
 
-        {/* Ergonomic Blue & Orange Arcade Handle Grip */}
         <rect
           x={physics.anchor.x - 13 * slingScaleX}
           y={forkJointY + 5 * slingScaleY}
@@ -773,7 +906,6 @@ export function SlingshotGame({
           stroke="#4A250B"
           strokeWidth={3.2 * unitScale}
         />
-        {/* Handle grip wrap ribs */}
         <path
           d={`M ${physics.anchor.x - 10 * slingScaleX} ${forkJointY + 15 * slingScaleY} Q ${physics.anchor.x} ${forkJointY + 18 * slingScaleY} ${physics.anchor.x + 10 * slingScaleX} ${forkJointY + 15 * slingScaleY} M ${physics.anchor.x - 10 * slingScaleX} ${forkJointY + 23 * slingScaleY} Q ${physics.anchor.x} ${forkJointY + 26 * slingScaleY} ${physics.anchor.x + 10 * slingScaleX} ${forkJointY + 23 * slingScaleY} M ${physics.anchor.x - 10 * slingScaleX} ${forkJointY + 31 * slingScaleY} Q ${physics.anchor.x} ${forkJointY + 34 * slingScaleY} ${physics.anchor.x + 10 * slingScaleX} ${forkJointY + 31 * slingScaleY}`}
           fill="none"
@@ -781,7 +913,6 @@ export function SlingshotGame({
           strokeWidth={2 * unitScale}
           strokeLinecap="round"
         />
-        {/* Action Orange Collar Ring */}
         <rect
           x={physics.anchor.x - 14.5 * slingScaleX}
           y={forkJointY + 1 * slingScaleY}
@@ -792,7 +923,6 @@ export function SlingshotGame({
           stroke="#4A250B"
           strokeWidth={2.8 * unitScale}
         />
-        {/* Golden Pommel Base Cap */}
         <ellipse
           cx={physics.anchor.x}
           cy={gripY + 2 * slingScaleY}
@@ -805,7 +935,7 @@ export function SlingshotGame({
       </g>
 
       {/* =====================================================================
-       * 2D CARTOON PROJECTILE IN POUCH (WHEN NOT IN FLIGHT)
+       * 2D CARTOON PROJECTILE IN POUCH
        * ===================================================================== */}
       {!shot && (
         <g
@@ -871,7 +1001,6 @@ export function SlingshotGame({
             r={coreRadius}
           />
 
-          {/* Cartoon Leather Saddle Pouch cradling the projectile */}
           <g transform={`rotate(${pouchAngle})`}>
             <ellipse
               cx={0}
@@ -892,7 +1021,6 @@ export function SlingshotGame({
             />
           </g>
 
-          {/* 2D Cartoon AI Energy Orb oriented along launch velocity */}
           <g
             transform={
               dragging && distance >= physics.minDragDistance
@@ -909,10 +1037,7 @@ export function SlingshotGame({
                 strokeLinejoin="round"
               />
             )}
-            <circle
-              r={coreRadius + 1.8 * unitScale}
-              fill="#172B7A"
-            />
+            <circle r={coreRadius + 1.8 * unitScale} fill="#172B7A" />
             <circle
               r={coreRadius}
               fill={
@@ -923,7 +1048,6 @@ export function SlingshotGame({
               stroke="#FFFFFF"
               strokeWidth={3.6 * unitScale}
             />
-            {/* Glossy Cartoon Specular Arc */}
             <ellipse
               cx={-4.5 * unitScale}
               cy={-5.5 * unitScale}
@@ -946,7 +1070,7 @@ export function SlingshotGame({
         </g>
       )}
 
-      {/* Front Elastic Band (Drawn over pouch edge for authentic 2.5D depth) */}
+      {/* Front Elastic Band */}
       <g aria-hidden="true">
         <path
           d={`M ${rightFork.x} ${rightFork.y} Q ${(rightFork.x + visualPull.x) / 2} ${(rightFork.y + visualPull.y) / 2 + 4 * slingScaleY} ${visualPull.x} ${visualPull.y}`}
@@ -973,8 +1097,89 @@ export function SlingshotGame({
       </g>
 
       {/* =====================================================================
-       * FLYING 2D CARTOON PROJECTILE (ROTATES WITH VELOCITY VECTOR)
+       * CARTOON GLOVED HAND SPRITE (FRAMES 01..16) DIRECTLY GRABBING, PULLING
+       * AND RELEASING THE SLINGSHOT ON STAGE!
        * ===================================================================== */}
+      {dragging && !shot && (
+        <g
+          className="cartoon-slingshot-hand is-pulling"
+          transform={`translate(${visualPull.x} ${visualPull.y + 16 * unitScale})`}
+          aria-hidden="true"
+        >
+          <g transform={pullingRight ? "scale(-1, 1)" : undefined}>
+            <image
+              href={activeHandSprite.src}
+              x={-handSpriteSize * 0.52}
+              y={-handSpriteSize * 0.42}
+              width={handSpriteSize}
+              height={handSpriteSize}
+            />
+          </g>
+        </g>
+      )}
+
+      {/* Splayed 5-Finger Open Hand Release Burst Animation (Frames 11..14) */}
+      {releasePoint && releaseFrameOffset !== null && (
+        <g
+          className="cartoon-slingshot-hand is-releasing"
+          transform={`translate(${releasePoint.x} ${releasePoint.y + 14 * unitScale})`}
+          aria-hidden="true"
+        >
+          <circle
+            r={(28 + releaseFrameOffset * 9) * unitScale}
+            fill="none"
+            stroke="#FF9B42"
+            strokeWidth={3 * unitScale}
+            strokeDasharray="6 6"
+            opacity={Math.max(0, 0.85 - releaseFrameOffset * 0.22)}
+          />
+          <image
+            href={getHandFrame(11 + Math.min(3, releaseFrameOffset)).src}
+            x={-handSpriteSize * 0.5}
+            y={-handSpriteSize * 0.45}
+            width={handSpriteSize}
+            height={handSpriteSize}
+          />
+        </g>
+      )}
+
+      {/* Live AR Hand Sprite Cursor when moving open hand toward the slingshot */}
+      {controlMode === "ar" && arCursor.hasHand && !dragging && !shot && (
+        <g
+          className="ar-hand-arena-cursor"
+          transform={`translate(${arCursor.x} ${arCursor.y})`}
+          aria-hidden="true"
+        >
+          <circle
+            r={34 * unitScale}
+            fill="rgba(22, 163, 74, 0.16)"
+            stroke="#16a34a"
+            strokeWidth={3 * unitScale}
+            strokeDasharray="6 4"
+          />
+          <image
+            href={activeHandSprite.src}
+            x={-handSpriteSize * 0.48}
+            y={-handSpriteSize * 0.48}
+            width={handSpriteSize * 0.96}
+            height={handSpriteSize * 0.96}
+          />
+          <text
+            y={-38 * unitScale}
+            textAnchor="middle"
+            fill="#15803D"
+            stroke="#FFFFFF"
+            strokeWidth={3.5 * unitScale}
+            paintOrder="stroke"
+            fontSize={10.5 * unitScale}
+            fontWeight="900"
+          >
+            {activeHandSprite.labelVi.toUpperCase()}
+          </text>
+        </g>
+      )}
+
+      {/* Flying 2D Cartoon Projectile */}
       {flight && (
         <g
           className={`projectile projectile-flight${shot?.power && shot.power >= 0.76 ? " is-powered" : ""}`}
@@ -988,7 +1193,6 @@ export function SlingshotGame({
             r={coreRadius}
           />
           <g transform={`rotate(${flightAngleDeg})`}>
-            {/* Aerodynamic Cartoon Comet Tail */}
             <path
               d={`M ${-coreRadius * 0.4} ${-coreRadius * 0.7} L ${-coreRadius * 1.95} 0 L ${-coreRadius * 0.4} ${coreRadius * 0.7} Z`}
               fill={shot?.power && shot.power >= 0.76 ? "#FF7A2F" : "#6E98FF"}
@@ -1051,41 +1255,6 @@ export function SlingshotGame({
         </g>
       )}
 
-      {/* Live AR Hand Cursor on the Arena Canvas */}
-      {controlMode === "ar" && arCursor.visible && !shot && (
-        <g
-          className={`ar-hand-arena-cursor ${arCursor.isGrabbing ? "is-grabbing" : ""}`}
-          transform={`translate(${arCursor.x} ${arCursor.y})`}
-          aria-hidden="true"
-        >
-          <circle
-            r={(arCursor.isGrabbing ? 24 : 30) * unitScale}
-            fill={arCursor.isGrabbing ? "rgba(255, 155, 66, 0.22)" : "rgba(66, 184, 131, 0.18)"}
-            stroke={arCursor.isGrabbing ? "#FF9B42" : "#42B883"}
-            strokeWidth={2.8 * unitScale}
-            strokeDasharray={arCursor.isGrabbing ? undefined : "5 4"}
-          />
-          <circle
-            r={7 * unitScale}
-            fill={arCursor.isGrabbing ? "#FF9B42" : "#42B883"}
-            stroke="#FFFFFF"
-            strokeWidth={2.2 * unitScale}
-          />
-          <text
-            y={-34 * unitScale}
-            textAnchor="middle"
-            fill={arCursor.isGrabbing ? "#D9531E" : "#15803D"}
-            stroke="#FFFFFF"
-            strokeWidth={3.5 * unitScale}
-            paintOrder="stroke"
-            fontSize={11 * unitScale}
-            fontWeight="900"
-          >
-            {arCursor.isGrabbing ? "✊ ĐANG KÉO • MỞ TAY ĐỂ BẮN" : "👌 CHỤM TAY ĐỂ CẦM NÁ"}
-          </text>
-        </g>
-      )}
-
       {/* Power Meter */}
       {dragging && (
         <g
@@ -1125,11 +1294,11 @@ export function SlingshotGame({
           : dragging
           ? distance >= physics.minDragDistance
             ? controlMode === "ar"
-              ? "MỞ BÀN TAY ĐỂ BẮN!"
-              : "THẢ ĐỂ BẮN"
+              ? "BUNG XÒE BÀN TAY ĐỂ BẮN!"
+              : "THẢ TAY ĐỂ BẮN!"
             : "KÉO THÊM ĐỂ TĂNG LỰC"
           : controlMode === "ar"
-          ? "CHỤM NGÓN TAY TRƯỚC CAMERA ĐỂ CẦM & KÉO NÁ"
+          ? "ĐƯA TAY VÀO KHUNG KẾT NỐI • NẮM TAY KÉO NÁ & BUNG TAY BẮN"
           : "KÉO VIÊN ĐẠN NGƯỢC HƯỚNG BIA"}
       </text>
     </svg>

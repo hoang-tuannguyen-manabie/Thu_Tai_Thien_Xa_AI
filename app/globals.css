@@ -1516,3 +1516,179 @@ button:focus-visible { outline: 3px solid #ff9b42; outline-offset: 3px; }
 .arena-shake-lose {
   animation: arena-shake-lose-kf 0.58s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
+
+
+/* ============================================================================
+ * FULL-STAGE AR VIDEO FEED, HAND CONNECTION DOCK & 16-FRAME HAND SPRITE UI
+ * ============================================================================ */
+.ar-stage-video-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.ar-stage-video-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.14);
+}
+.ar-stage-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  opacity: 0.78;
+  filter: contrast(1.06) saturate(1.1);
+}
+.ar-stage-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* When Full-Stage AR Camera is active, keep targets & slingshot crisp above the video */
+.arena-stage:has(.ar-stage-video-layer) .arena-ground {
+  opacity: 0.45;
+}
+.arena-stage:has(.ar-stage-video-layer) .target-caption {
+  background: rgba(255, 255, 255, 0.92);
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: #1b3a8a;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+}
+
+/* Floating Hand Sprite Status Dock at bottom-left of Arena Stage */
+.ar-hand-status-dock {
+  position: absolute;
+  z-index: 9;
+  bottom: 10px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 10px 6px 7px;
+  border-radius: 18px;
+  border: 2.5px solid #2563eb;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 5px 0 #133478, 0 12px 26px rgba(15, 23, 42, 0.25);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.ar-hand-status-dock.is-connected {
+  border-color: #16a34a;
+  box-shadow: 0 5px 0 #0b5626, 0 12px 26px rgba(22, 163, 74, 0.25);
+}
+.ar-hand-status-dock.is-grabbing {
+  border-color: #f47920;
+  background: #fff7ed;
+  box-shadow: 0 5px 0 #9a3412, 0 0 20px rgba(244, 121, 32, 0.45);
+}
+.ar-hand-sprite-box {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  background: #f4f8ff;
+  border: 2px solid #93c5fd;
+  padding: 2px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ar-hand-status-dock.is-connected .ar-hand-sprite-box {
+  background: #ebf9f1;
+  border-color: #86efac;
+}
+.ar-hand-status-dock.is-grabbing .ar-hand-sprite-box {
+  background: #ffedd5;
+  border-color: #f47920;
+}
+.ar-hand-status-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+.ar-hand-status-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ar-hand-badge-tag {
+  font-size: 8.5px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: #15803d;
+  text-transform: uppercase;
+}
+.ar-hand-status-dock.is-grabbing .ar-hand-badge-tag {
+  color: #c2410c;
+}
+.ar-hand-status-dock.is-waiting .ar-hand-badge-tag {
+  color: #b45309;
+}
+.ar-hand-status-title {
+  font-size: 11.5px;
+  font-weight: 900;
+  color: #1b3a8a;
+  white-space: nowrap;
+}
+.ar-dock-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px;
+  border-radius: 11px;
+  border: 1.5px solid #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 9.5px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: background 0.14s;
+}
+.ar-dock-btn:hover {
+  background: #dbeafe;
+}
+.ar-dock-btn.is-mouse {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+}
+.ar-dock-btn.is-mouse:hover {
+  background: #e2e8f0;
+}
+
+/* Tutorial Hand Sprite Actor on the Automated Tutorial Slingshot Stage */
+.tutorial-hand-sprite-actor {
+  position: absolute;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transform: translate(-50%, -42%);
+  pointer-events: none;
+}
+.tutorial-hand-caption {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1.5px solid #fff;
+  background: #1b3a8a;
+  color: #fff;
+  font-size: 8.5px;
+  font-weight: 900;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.25);
+}

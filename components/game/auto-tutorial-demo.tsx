@@ -18,6 +18,10 @@ import {
   PLAYER_CHARACTERS,
   type PlayerProfile,
 } from "@/lib/characters"
+import {
+  getHandFrame,
+  HAND_TUTORIAL_STEPS,
+} from "@/lib/hand-sprites"
 import { gameAudio } from "@/lib/audio"
 import { CharacterAvatar } from "./player-setup-modal"
 import type { ControlMode } from "./slingshot-game"
@@ -223,6 +227,7 @@ export function AutoTutorialDemo({
   const [countdown, setCountdown] = useState<number | null>(null)
   const [demoScore, setDemoScore] = useState(0)
   const [replayKey, setReplayKey] = useState(0)
+  const [handFrameNum, setHandFrameNum] = useState<number>(16)
   const reducedMotion = useReducedMotion() === true
   const companion = playerProfile
     ? getCharacterById(playerProfile.characterId)
@@ -236,33 +241,80 @@ export function AutoTutorialDemo({
     setPhase("opening")
     setCountdown(null)
     setDemoScore(0)
-    at(500, () => {
+    setHandFrameNum(16) // Frame 16: Open front palm entering connection zone
+
+    // Step-by-step hand closing animation (16 -> 1 -> 2 -> 3 -> 4 -> 5)
+    at(150, () => setHandFrameNum(1))
+    at(280, () => setHandFrameNum(2))
+    at(390, () => setHandFrameNum(3))
+    at(480, () => setHandFrameNum(5))
+
+    // Round 1: Pulling & aiming at Correct Target (CÓ AI) -> Frames 6 -> 7 -> 9 -> 10
+    at(550, () => {
       setPhase("aiming-correct")
-      if (soundOn) gameAudio.playSlingshotPull(0.75)
+      setHandFrameNum(6)
+      if (soundOn) gameAudio.playSlingshotPull(0.55)
     })
+    at(950, () => setHandFrameNum(7))
+    at(1350, () => {
+      setHandFrameNum(9)
+      if (soundOn) gameAudio.playSlingshotPull(0.85)
+    })
+    at(1650, () => setHandFrameNum(10))
+
+    // Release Round 1 -> Wide open 5-finger burst (Frames 11 -> 12 -> 13)
     at(1850, () => {
       setPhase("flight-correct")
-      if (soundOn) gameAudio.playSlingshotRelease(0.8)
+      setHandFrameNum(11)
+      if (soundOn) gameAudio.playSlingshotRelease(0.85)
     })
+    at(2020, () => setHandFrameNum(12))
+    at(2200, () => setHandFrameNum(13))
     at(2350, () => {
       setPhase("hit-correct")
+      setHandFrameNum(15)
       setDemoScore((prev) => applyScoreDelta(prev, true))
       if (soundOn) gameAudio.playCorrectHit(1)
     })
-    at(3550, () => setPhase("scenario-wrong"))
+
+    // Round 2: Approaching & grabbing for Scenario 2 (Alarm Clock)
+    at(3550, () => {
+      setPhase("scenario-wrong")
+      setHandFrameNum(16)
+    })
+    at(3800, () => setHandFrameNum(1))
+    at(4020, () => setHandFrameNum(3))
+    at(4200, () => setHandFrameNum(5))
+
+    // Pulling & aiming at Wrong Target -> Frames 6 -> 7 -> 9 -> 10
     at(4350, () => {
       setPhase("aiming-wrong")
-      if (soundOn) gameAudio.playSlingshotPull(0.75)
+      setHandFrameNum(6)
+      if (soundOn) gameAudio.playSlingshotPull(0.55)
     })
+    at(4750, () => setHandFrameNum(7))
+    at(5150, () => {
+      setHandFrameNum(9)
+      if (soundOn) gameAudio.playSlingshotPull(0.85)
+    })
+    at(5450, () => setHandFrameNum(10))
+
+    // Release Round 2 -> Wide open 5-finger burst (Frames 11 -> 12 -> 13)
     at(5650, () => {
       setPhase("flight-wrong")
-      if (soundOn) gameAudio.playSlingshotRelease(0.8)
+      setHandFrameNum(11)
+      if (soundOn) gameAudio.playSlingshotRelease(0.85)
     })
+    at(5820, () => setHandFrameNum(12))
+    at(6000, () => setHandFrameNum(13))
     at(6150, () => {
       setPhase("hit-wrong")
+      setHandFrameNum(15)
       setDemoScore((prev) => applyScoreDelta(prev, false))
       if (soundOn) gameAudio.playWrongHit()
     })
+
+    // Scoring Guide & 3 -> 2 -> 1 Countdown
     at(7550, () => setPhase("guide"))
     at(8750, () => {
       setPhase("countdown")
@@ -273,6 +325,7 @@ export function AutoTutorialDemo({
     at(11000, () => {
       setCountdown(null)
       setPhase("ready")
+      setHandFrameNum(16)
     })
 
     return () => timers.forEach(window.clearTimeout)
@@ -296,23 +349,35 @@ export function AutoTutorialDemo({
   const isHit = isCorrectHit || isWrongHit
   const targetAI = true
 
+  const activeHandSprite = getHandFrame(handFrameNum)
+
+  // Determine which of the 4 tutorial gesture cards is currently active
+  const activeStepIndex =
+    phase === "opening" || phase === "scenario-wrong"
+      ? handFrameNum >= 2 && handFrameNum <= 5
+        ? 1
+        : 0
+      : isAiming
+      ? 2
+      : isFlying || isHit
+      ? 3
+      : -1
+
   const message =
     phase === "opening"
-      ? "QUAN SÁT MANA THỬ TÀI!"
+      ? "BƯỚC 1 & 2: ĐƯA TAY VÀO KHUNG & NẮM VIÊN ĐẠN"
       : isAiming
-      ? controlMode === "ar"
-        ? "CHỤM TAY KÉO NÁ – NHẮM BIA"
-        : "KÉO NÁ – NHẮM BIA"
+      ? "BƯỚC 3: NẮM TAY KÉO CĂNG DÂY NÁ & NGẮM BIA"
       : isFlying
-      ? "MANA ĐANG BẮN!"
+      ? "BƯỚC 4: BUNG XÒE 5 NGÓN TAY ĐỂ PHÓNG ĐẠN!"
       : isCorrectHit
       ? `BẮN ĐÚNG – CỘNG +${GAME_SCORING.CORRECT_ANSWER} ĐIỂM!`
       : phase === "scenario-wrong"
-      ? "THỬ MỘT TÌNH HUỐNG KHÁC"
+      ? "THỬ TÌNH HUỐNG 2: ĐƯA TAY NẮM NÁ..."
       : isWrongHit
       ? `BẮN SAI – TRỪ -${GAME_SCORING.WRONG_ANSWER} ĐIỂM!`
       : phase === "guide"
-      ? "CÁCH TÍNH ĐIỂM"
+      ? "QUY TẮC TÍNH ĐIỂM XẠ THỦ AI"
       : phase === "ready"
       ? "SẴN SÀNG CHƯA?"
       : ""
@@ -329,18 +394,18 @@ export function AutoTutorialDemo({
 
   return (
     <main className="screen auto-tutorial-screen relative w-full h-full flex flex-col justify-between gap-2 sm:gap-2.5 p-2.5 sm:p-4 md:p-5 overflow-hidden ppt-page-enter">
-      {/* Header & Telemetry (Tug-of-War GuidePage Style) */}
+      {/* Header & Telemetry */}
       <div className="flex flex-row items-center justify-between gap-2 pb-0.5 shrink-0 pr-20 sm:pr-28">
         <div>
           <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#eaf2ff] border-2 border-[#2563eb] mb-0.5 shadow-xs">
             <span className="w-1.5 h-1.5 rounded-full bg-[#2563eb]" />
             <span className="text-[10px] sm:text-xs text-[#1b3a8a] uppercase font-black">
-              BƯỚC 03 / 05 • QUY TẮC &amp; TRÌNH DIỄN BẮN MẪU
+              BƯỚC 03 / 05 • HƯỚNG DẪN CỬ CHỈ TAY KÉO – THẢ NÁ
             </span>
           </div>
           <h1 className="text-base sm:text-xl md:text-2xl lg:text-3xl font-black text-[#1b3a8a] uppercase leading-tight m-0">
-            HƯỚNG DẪN CHƠI{" "}
-            <span className="text-[#f47920]">THỬ TÀI XẠ THỦ AI</span>
+            4 BƯỚC CẦM – KÉO – THẢ NÁ{" "}
+            <span className="text-[#f47920]">XẠ THỦ AI</span>
           </h1>
         </div>
 
@@ -375,100 +440,117 @@ export function AutoTutorialDemo({
         </div>
       </div>
 
-      {/* 2-Column Split Layout: Left Steps + Right Automated Slingshot Arena */}
+      {/* 2-Column Split Layout: Left 4 Hand-Sprite Steps + Right Live Slingshot Stage */}
       <div className="relative grid grid-cols-1 md:grid-cols-12 gap-2.5 sm:gap-3.5 flex-1 min-h-0 overflow-hidden">
-        {/* LEFT COLUMN (4/12): 2 Step Cards + Current Scenario */}
-        <div className="md:col-span-4 flex flex-col justify-between gap-2 sm:gap-2.5 h-full min-h-0">
-          {/* Step 1 */}
-          <div className="rounded-2xl bg-[#eaf2ff] border-2 border-[#93c5fd] p-3 flex items-center gap-3 shadow-xs">
-            <div className="w-11 h-11 rounded-xl bg-white border-2 border-[#3b82f6] p-1 flex items-center justify-center shrink-0">
-              <img
-                src="/assets/tutorial/popup-mascot-inspect-v5/mana-inspect-loop-v5.gif"
-                alt="01"
-                className="w-full h-full object-contain"
-              />
-            </div>
-            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="mana-keep-white text-[9.5px] font-black text-white px-2.5 py-0.5 rounded-full bg-[#2563eb] uppercase">
-                  01 • QUAN SÁT
-                </span>
-                <span className="text-xs sm:text-sm font-black text-[#1b3a8a]">
-                  ĐỌC TÌNH HUỐNG
-                </span>
-              </div>
-              <p className="text-[11px] sm:text-xs text-slate-700 leading-snug font-semibold m-0">
-                Phân tích xem hoạt động có dùng{" "}
-                <strong>Trí tuệ nhân tạo (AI)</strong> hay chỉ là{" "}
-                <strong>Tự động hóa cố định</strong>.
-              </p>
-            </div>
-          </div>
+        {/* LEFT COLUMN (5/12): 4 Hand Sprite Gesture Steps + Current Scenario */}
+        <div className="md:col-span-5 flex flex-col justify-between gap-2 h-full min-h-0">
+          {/* 2x2 Grid of the 4 Hand Gesture Sprite Steps */}
+          <div className="grid grid-cols-2 gap-2 shrink-0">
+            {HAND_TUTORIAL_STEPS.map((stepItem, idx) => {
+              const isStepActive = activeStepIndex === idx
+              const primarySprite = getHandFrame(stepItem.primaryFrame)
+              const displaySprite =
+                isStepActive ? activeHandSprite : primarySprite
 
-          {/* Step 2 */}
-          <div className="rounded-2xl bg-[#fff7ed] border-2 border-[#fdba74] p-3 flex items-center gap-3 shadow-xs">
-            <div className="w-11 h-11 rounded-xl bg-white border-2 border-[#f47920] p-1 flex items-center justify-center shrink-0">
-              <img
-                src="/assets/tutorial/popup-mascot-welcome-v3/mana-welcome-loop-v3.gif"
-                alt="02"
-                className="w-full h-full object-contain"
-              />
-            </div>
-            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="mana-keep-white text-[9.5px] font-black text-white px-2.5 py-0.5 rounded-full bg-[#f47920] uppercase">
-                  02 • KÉO NÁ &amp; BẮN BIA
-                </span>
-                <span className="text-xs sm:text-sm font-black text-[#1b3a8a]">
-                  CHỌN TRÁI / PHẢI
-                </span>
-              </div>
-              <div className="text-[11px] sm:text-xs text-slate-700 leading-snug flex flex-col gap-0.5 font-semibold">
-                <span>
-                  • <strong className="text-[#15803d]">BIA TRÁI (👈)</strong>:
-                  KHÔNG CÓ AI
-                </span>
-                <span>
-                  • <strong className="text-[#2563eb]">BIA PHẢI (👉)</strong>:
-                  CÓ SỬ DỤNG AI
-                </span>
-              </div>
-            </div>
+              return (
+                <div
+                  key={stepItem.step}
+                  className={`rounded-2xl p-2 sm:p-2.5 border-2 flex items-center gap-2.5 transition-all duration-200 ${
+                    isStepActive
+                      ? "bg-white border-[#f47920] shadow-[0_4px_0_#c2410c] scale-[1.02]"
+                      : "bg-white/90 border-[#dbeafe] shadow-2xs"
+                  }`}
+                >
+                  <div
+                    className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-xl border-2 p-1 flex items-center justify-center shrink-0 overflow-hidden"
+                    style={{
+                      backgroundColor: stepItem.bg,
+                      borderColor: isStepActive ? "#f47920" : stepItem.color,
+                    }}
+                  >
+                    <img
+                      src={displaySprite.src}
+                      alt={stepItem.title}
+                      className="w-full h-full object-contain drop-shadow-[0_2px_4px_rgba(0,0,0,0.18)]"
+                    />
+                    <span
+                      className="mana-keep-white absolute top-0.5 left-0.5 px-1.5 py-0.1 rounded-md text-[8.5px] font-black text-white"
+                      style={{ backgroundColor: stepItem.color }}
+                    >
+                      {stepItem.step}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col min-w-0">
+                    <b className="text-[11px] sm:text-xs font-black text-[#1b3a8a] leading-tight truncate">
+                      {stepItem.title}
+                    </b>
+                    <span className="text-[10px] text-slate-600 font-semibold leading-snug">
+                      {stepItem.subtitle}
+                    </span>
+                    {/* Mini sprite frames strip for this step */}
+                    <div className="flex items-center gap-1 mt-1">
+                      {stepItem.frames.map((fNum) => (
+                        <img
+                          key={fNum}
+                          src={getHandFrame(fNum).src}
+                          alt={`Frame ${fNum}`}
+                          className={`w-4 h-4 object-contain rounded border ${
+                            handFrameNum === fNum
+                              ? "border-[#f47920] bg-[#fff7ed] scale-115"
+                              : "border-slate-200 bg-slate-50 opacity-70"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
 
           {/* Live Automated Demo Status & Scenario Card */}
-          <div className="rounded-2xl bg-white border-2 border-[#bfdbfe] p-3 flex flex-col gap-2 shadow-xs flex-1 justify-center">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase text-[#2563eb] tracking-wider">
-                🎯 TÌNH HUỐNG MÔ PHỎNG TỰ ĐỘNG
-              </span>
+          <div className="rounded-2xl bg-white border-2 border-[#bfdbfe] p-2.5 sm:p-3 flex flex-col justify-between gap-1.5 shadow-xs flex-1 min-h-0">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <img
+                  src={activeHandSprite.src}
+                  alt={activeHandSprite.labelVi}
+                  className="w-7 h-7 object-contain rounded-lg bg-[#fff7ed] border border-[#fdba74] p-0.5"
+                />
+                <span className="text-[10px] font-black uppercase text-[#2563eb] tracking-wider">
+                  TRẠNG THÁI TAY: {activeHandSprite.labelVi.toUpperCase()}
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={onReplay}
-                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#eff6ff] hover:bg-[#dbeafe] text-[#2563eb] text-[10px] font-black cursor-pointer"
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#eff6ff] hover:bg-[#dbeafe] text-[#2563eb] text-[10px] font-black cursor-pointer shrink-0"
               >
                 <RotateCcw size={11} /> Phát lại
               </button>
             </div>
+
             <motion.div
-              className="text-sm sm:text-base font-black text-[#f47920] uppercase"
+              className="text-xs sm:text-sm font-black text-[#f47920] uppercase truncate"
               key={`${replayKey}-${message}`}
-              initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+              initial={reducedMotion ? false : { opacity: 0, y: 5 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: reducedMotion ? 0 : 0.25 }}
+              transition={{ duration: reducedMotion ? 0 : 0.22 }}
               aria-live="polite"
             >
               {message || "\u00A0"}
             </motion.div>
+
             <TutorialScenarioCard scenario={scenario} />
           </div>
         </div>
 
-        {/* RIGHT COLUMN (8/12): Automated Slingshot Demonstration Stage */}
-        <div className="md:col-span-8 flex flex-col h-full min-h-0">
+        {/* RIGHT COLUMN (7/12): Automated Slingshot Demonstration Stage with Hand Sprite */}
+        <div className="md:col-span-7 flex flex-col h-full min-h-0">
           <section
             className={`auto-tutorial-arena flex-1 min-h-0${isHit ? " is-hit" : ""}${isWrongHit ? " is-warning" : ""}`}
-            aria-label="Mana trình diễn cách bắn vào hai bia"
+            aria-label="Trình diễn bàn tay cầm, kéo và thả ná bắn vào hai bia"
           >
             <div className="tutorial-sun" />
             <div className="tutorial-cloud tutorial-cloud-left" />
@@ -482,6 +564,7 @@ export function AutoTutorialDemo({
               active={isCorrectHit || isWrongHit}
               warning={isWrongHit}
             />
+
             <svg
               className="tutorial-sling-svg"
               viewBox="0 0 1000 560"
@@ -500,6 +583,21 @@ export function AutoTutorialDemo({
                   <stop offset="100%" stopColor="#233B99" />
                 </linearGradient>
               </defs>
+
+              {/* Hand Connection Docking Box around Slingshot Pouch */}
+              <g transform="translate(500 350)">
+                <rect
+                  x="-64"
+                  y="-58"
+                  width="128"
+                  height="116"
+                  rx="24"
+                  fill={isAiming ? "rgba(244, 121, 32, 0.14)" : "rgba(22, 163, 74, 0.12)"}
+                  stroke={isAiming ? "#f47920" : "#16a34a"}
+                  strokeWidth="3"
+                  strokeDasharray="10 6"
+                />
+              </g>
 
               <motion.path
                 className="tutorial-band tutorial-band-back"
@@ -607,6 +705,7 @@ export function AutoTutorialDemo({
               )}
             </svg>
 
+            {/* Projectile */}
             <motion.div
               className="tutorial-projectile"
               initial={false}
@@ -622,6 +721,37 @@ export function AutoTutorialDemo({
                 ease: isFlying ? "easeIn" : "easeOut",
               }}
             />
+
+            {/* ===============================================================
+             * ANIMATED CARTOON HAND SPRITE (FRAMES 01..16) ON THE SLINGSHOT!
+             * Reaches -> Closes -> Grabs -> Pulls back -> Snaps wide open on release!
+             * =============================================================== */}
+            {!["guide", "countdown", "ready"].includes(phase) && (
+              <motion.div
+                className="tutorial-hand-sprite-actor"
+                initial={false}
+                animate={
+                  isAiming
+                    ? { left: "41%", top: "69%", scale: 1.08, rotate: -12 }
+                    : isFlying || isHit
+                    ? { left: "40%", top: "70%", scale: 1.15, rotate: 0 }
+                    : { left: "51%", top: "66%", scale: 1, rotate: 0 }
+                }
+                transition={{
+                  duration: reducedMotion ? 0 : isAiming ? 0.6 : 0.35,
+                  ease: "easeOut",
+                }}
+              >
+                <img
+                  src={activeHandSprite.src}
+                  alt={activeHandSprite.labelVi}
+                  className="w-16 h-16 sm:w-20 sm:h-20 object-contain drop-shadow-[0_6px_12px_rgba(15,23,42,0.32)]"
+                />
+                <span className="tutorial-hand-caption">
+                  {activeHandSprite.labelVi}
+                </span>
+              </motion.div>
+            )}
 
             <motion.div
               className="tutorial-mana"
@@ -713,7 +843,7 @@ export function AutoTutorialDemo({
         </div>
       </div>
 
-      {/* Bottom Navigation & Start Bar (Matching GuidePage in Tug-AR-Game-Manabie) */}
+      {/* Bottom Navigation & Start Bar */}
       <div className="bg-white/95 rounded-2xl p-2 sm:p-2.5 border-2 border-[#bfdbfe] flex items-center justify-between gap-2 shrink-0 shadow-xs">
         <div className="flex items-center gap-2">
           <button
@@ -740,7 +870,6 @@ export function AutoTutorialDemo({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Player & Companion Chip */}
           <button
             type="button"
             onClick={() => {
@@ -759,7 +888,6 @@ export function AutoTutorialDemo({
             <UserCheck size={13} className="text-[#16a34a]" />
           </button>
 
-          {/* Control Mode Switcher Pill */}
           {onControlModeChange && (
             <button
               type="button"
@@ -788,7 +916,6 @@ export function AutoTutorialDemo({
             </button>
           )}
 
-          {/* Start Game 3D Orange Button */}
           <button
             type="button"
             onClick={() => {

@@ -12,6 +12,7 @@ import {
   Touchpad,
 } from "lucide-react"
 import type { PlayerProfile } from "@/lib/characters"
+import { getHandFrame } from "@/lib/hand-sprites"
 import { gameAudio } from "@/lib/audio"
 import type { ControlMode } from "./slingshot-game"
 
@@ -173,6 +174,13 @@ export interface InteractionModeScreenProps {
   onDirectPlay?: () => void
 }
 
+const AR_SPRITE_PREVIEW_STEPS = [
+  { frame: 16, label: "1. Mở tay" },
+  { frame: 5, label: "2. Nắm đạn" },
+  { frame: 9, label: "3. Kéo ná" },
+  { frame: 11, label: "4. Bung bắn!" },
+]
+
 export function InteractionModeScreen({
   controlMode,
   onSelectControlMode,
@@ -232,7 +240,7 @@ export function InteractionModeScreen({
 
       {/* 2 Side-by-Side 3D Mode Selection Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-5 flex-1 min-h-0 items-stretch">
-        {/* CARD 1: AR HAND GESTURE CAMERA */}
+        {/* CARD 1: AR HAND GESTURE CAMERA WITH 4-STEP HAND SPRITE STRIP */}
         <button
           type="button"
           onClick={() => {
@@ -264,27 +272,42 @@ export function InteractionModeScreen({
             )}
           </div>
 
+          {/* 4-Step Cartoon Hand Sprite Sequence Showcase */}
           <div className="flex-1 min-h-0 flex items-center justify-center py-2">
-            <div className="relative h-20 sm:h-28 md:h-32 aspect-square rounded-2xl bg-white/95 border-2 border-[#86efac] p-2.5 shadow-[0_4px_16px_rgba(22,163,74,0.12)] flex items-center justify-center group-hover:scale-105 transition-all duration-300">
-              <div className="absolute inset-0 rounded-2xl bg-[#ebf9f1]/60 pointer-events-none" />
-              <img
-                src="/assets/ar-hand-dashed.png"
-                alt="Nhận diện bàn tay AR"
-                className="w-full h-full object-contain relative z-10 drop-shadow-[0_4px_10px_rgba(234,88,12,0.2)]"
-              />
+            <div className="grid grid-cols-4 gap-2 sm:gap-3 w-full max-w-md">
+              {AR_SPRITE_PREVIEW_STEPS.map((item) => {
+                const sprite = getHandFrame(item.frame)
+                return (
+                  <div
+                    key={item.frame}
+                    className="flex flex-col items-center gap-1 p-2 rounded-2xl bg-white/95 border-2 border-[#86efac] shadow-xs group-hover:scale-105 transition-transform"
+                  >
+                    <img
+                      src={sprite.src}
+                      alt={item.label}
+                      className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-[0_3px_6px_rgba(0,0,0,0.16)]"
+                    />
+                    <span className="text-[10px] font-black text-[#15803d] text-center whitespace-nowrap">
+                      {item.label}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           </div>
 
           <div className="flex flex-col gap-1 shrink-0 w-full">
             <h2 className="text-base sm:text-lg font-black text-[#15803d] tracking-tight">
-              Dùng tay trực tiếp Cầm, Kéo &amp; Thả Ná trước Camera
+              Quay trực tiếp tay người bắn: Cầm – Kéo – Bung tay bắn ná!
             </h2>
             <p className="text-xs sm:text-sm text-slate-700 font-semibold leading-relaxed">
-              <strong>Chụm ngón cái &amp; trỏ</strong> (hoặc nắm tay) để cầm viên đạn, kéo ngược hướng bia muốn bắn và <strong>mở bàn tay</strong> để phóng đạn!
+              Camera AR quay toàn sân đấu thấy rõ tay người bắn: Đưa tay vào khung kết nối,{" "}
+              <strong>nắm tay</strong> cầm viên đạn, kéo căng dây ná và{" "}
+              <strong>bung xòe 5 ngón tay</strong> để bắn!
             </p>
             <div className="mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/90 border border-[#86efac]/80 text-xs font-bold text-[#15803d] shadow-2xs self-start">
               <ShieldCheck size={15} className="text-[#16a34a]" />
-              <span>Dành cho máy tính / laptop có Camera hoặc Webcam</span>
+              <span>Hiển thị trực tiếp tay người chơi &amp; hiệu ứng Sprite 16 trạng thái</span>
             </div>
           </div>
         </button>
